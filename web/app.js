@@ -441,8 +441,8 @@ function renderExecutionsTable(logs) {
   }
 
   let html = '';
-  // Show most recent trades on top
-  [...logs].reverse().forEach((log) => {
+  // Sort by timestamp descending (most recent first)
+  [...logs].sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at)).forEach((log) => {
     const opp = log.opportunity || {};
     const t = opp.triangle || {};
     const timeStr = log.executed_at ? new Date(log.executed_at).toLocaleTimeString() : '--:--:--';
