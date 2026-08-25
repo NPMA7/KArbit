@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
+  <title>KArbit | High-Frequency Binance Triangular Arbitrage Terminal</title>
+  <meta name="description" content="Real-time High-Frequency Triangular Arbitrage Engine and Web Control Center for Binance Spot Market.">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css?v=4.0">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="logo-box">
+          <img src="/logo.jpg" alt="KArbit Logo" class="logo-img">
+          <div class="logo-text">
+            <h1>KArbit <span class="badge-hft">HFT v1.0</span></h1>
+            <p class="subtitle">Binance Spot Triangular Arbitrage Engine</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="stream-pill" id="ws-status-pill">
+          <span class="status-dot pulsing" id="ws-status-dot"></span>
+          <span class="status-label" id="ws-status-text">CONNECTING...</span>
+          <span class="latency-badge" id="ws-latency-val">-- ms</span>
+        </div>
+        <div class="mode-pill" id="mode-badge">
+          <span class="mode-tag" id="mode-text">PAPER TRADING</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="header-meta-item">
+          <span class="meta-label">UPTIME</span>
+          <span class="meta-val font-mono" id="uptime-val">00:00:00</span>
+        </div>
+        <div class="header-meta-item">
+          <span class="meta-label">BASE ASSET</span>
+          <span class="meta-val font-mono highlight-gold" id="base-asset-val">USDT</span>
+        </div>
+        <button class="btn-refresh" id="btn-reconnect" title="Reconnect WebSocket Stream">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- KPI Metric Cards Grid -->
+    <section class="kpi-grid">
+      <!-- KPI 1: Cumulative PnL -->
+      <div class="kpi-card glow-cyan">
+        <div class="kpi-header">
+          <span class="kpi-title">CUMULATIVE SESSION PNL</span>
+          <span class="kpi-icon icon-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+          </span>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-primary-val font-mono" id="kpi-pnl-val">+$0.0000</div>
+          <div class="kpi-sub-row">
+            <span class="badge-pill bg-success-soft" id="kpi-pnl-pct">+0.00%</span>
+            <span class="kpi-sub-text" id="kpi-pnl-subtext">Paper Net Profit</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI 2: Wallet Balance -->
+      <div class="kpi-card glow-blue">
+        <div class="kpi-header">
+          <span class="kpi-title" id="kpi-wallet-title">WALLET BALANCE</span>
+          <span class="kpi-icon icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          </span>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-primary-val font-mono" id="kpi-wallet-val">$100.00</div>
+          <div class="kpi-sub-row">
+            <span class="kpi-sub-text">Capital per trade: <strong class="font-mono" id="kpi-capital-val">$100.00</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI 3: Throughput -->
+      <div class="kpi-card glow-purple">
+        <div class="kpi-header">
+          <span class="kpi-title">HFT ENGINE THROUGHPUT</span>
+          <span class="kpi-icon icon-purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          </span>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-primary-val font-mono" id="kpi-evals-sec">0 <span class="val-unit">evals/s</span></div>
+          <div class="kpi-sub-row">
+            <span class="kpi-sub-text"><span id="kpi-ws-msgs" class="font-mono text-cyan">0</span> ticks/sec | <span id="kpi-tri-count" class="font-mono text-yellow">1664</span> paths</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI 4: Trade Stats -->
+      <div class="kpi-card glow-emerald">
+        <div class="kpi-header">
+          <span class="kpi-title">TRADE EXECUTIONS</span>
+          <span class="kpi-icon icon-emerald">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+          </span>
+        </div>
+        <div class="kpi-body">
+          <div class="kpi-primary-val font-mono" id="kpi-trades-count">0 <span class="val-unit">trades</span></div>
+          <div class="kpi-sub-row">
+            <span class="badge-pill bg-success-soft" id="kpi-winrate">100% Win</span>
+            <span class="kpi-sub-text">Circuit: <strong class="text-emerald" id="kpi-circuit">SAFE</strong></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Grid -->
+    <main class="main-layout">
+      <!-- Left Column: Route Logic & Tables -->
+      <div class="content-left">
+        <!-- Horizontal Arbitrage Route Logic Architecture -->
+        <div class="panel-box panel-route-logic">
+          <div class="panel-header py-2">
+            <div class="panel-title-group">
+              <svg class="panel-icon text-yellow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22 12 2"></polygon></svg>
+              <h2>Arbitrage Route Architecture & Execution Logic</h2>
+            </div>
+            <div class="formula-pill">
+              <span class="text-muted">Net Spread Formula:</span>
+              <code>Final USDT = Modal &times; (1 - Fee)<sup>3</sup> &times; Rate<sub>1</sub> &times; Rate<sub>2</sub> &times; Rate<sub>3</sub></code>
+            </div>
+          </div>
+          <div class="panel-body py-3">
+            <div class="horizontal-route-diagram">
+              <div class="h-route-step">
+                <span class="route-badge">LEG 1</span>
+                <div class="h-route-info">
+                  <span><strong class="text-cyan">USDT</strong> <span class="route-action">&rarr; BUY</span> <strong>Asset A</strong></span>
+                  <span class="h-subtext">Order: <strong>Best Ask Price</strong></span>
+                </div>
+              </div>
+              <div class="h-route-arrow">&rarr;</div>
+              <div class="h-route-step">
+                <span class="route-badge">LEG 2</span>
+                <div class="h-route-info">
+                  <span><strong>Asset A</strong> <span class="route-action">&rarr; CONVERT</span> <strong>Asset B</strong></span>
+                  <span class="h-subtext">Order: <strong>Ask / Bid Cross Pair</strong></span>
+                </div>
+              </div>
+              <div class="h-route-arrow">&rarr;</div>
+              <div class="h-route-step">
+                <span class="route-badge">LEG 3</span>
+                <div class="h-route-info">
+                  <span><strong>Asset B</strong> <span class="route-action">&rarr; SELL</span> <strong class="text-emerald">USDT</strong></span>
+                  <span class="h-subtext">Order: <strong>Best Bid Price (Closed Loop)</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Arbitrage Spread Radar -->
+        <div class="panel-box panel-radar">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <span class="pulse-ring"></span>
+              <h2>Live Triangular Spread Radar</h2>
+              <span class="badge-live-count" id="radar-count">0 active paths</span>
+            </div>
+            <div class="panel-tools">
+              <!-- Radar Mode Switch Tabs -->
+              <div class="radar-tab-group">
+                <button type="button" class="radar-tab-btn active" data-filter="all" id="tab-radar-all" onclick="window.setRadarFilterTab('all')">
+                  All Routes <span class="tab-badge" id="tab-count-all">0</span>
+                </button>
+                <button type="button" class="radar-tab-btn" data-filter="triggered" id="tab-radar-triggered" onclick="window.setRadarFilterTab('triggered')">
+                  ⚡ Triggered <span class="tab-badge badge-green" id="tab-count-triggered">0</span>
+                </button>
+                <button type="button" class="radar-tab-btn" data-filter="monitoring" id="tab-radar-monitoring" onclick="window.setRadarFilterTab('monitoring')">
+                  📊 Monitoring <span class="tab-badge" id="tab-count-monitoring">0</span>
+                </button>
+              </div>
+              <span class="filter-indicator">Trigger: &ge; <strong id="filter-min-profit-tag">+0.05%</strong></span>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="opportunities-table">
+              <thead>
+                <tr>
+                  <th>TRIANGULAR ROUTE</th>
+                  <th>GROSS SPREAD</th>
+                  <th>EST. NET PROFIT %</th>
+                  <th>EST. PROFIT ($)</th>
+                  <th>SPREAD STATUS</th>
+                  <th>QUOTE AGE</th>
+                </tr>
+              </thead>
+              <tbody id="opps-tbody">
+                <tr class="row-empty">
+                  <td colspan="6">
+                    <div class="empty-state">
+                      <div class="spinner-sonar"></div>
+                      <p>Connecting to Binance WebSocket stream & evaluating 1,600+ triangular cycles...</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Execution Log -->
+        <div class="panel-box panel-executions">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              <h2>Recent Trade Executions Log</h2>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="executions-table">
+              <thead>
+                <tr>
+                  <th>TIMESTAMP</th>
+                  <th>ROUTE</th>
+                  <th>NET PROFIT %</th>
+                  <th>PROFIT ($)</th>
+                  <th>LATENCY</th>
+                  <th>STATUS / MODE</th>
+                </tr>
+              </thead>
+              <tbody id="exec-tbody">
+                <tr class="row-empty">
+                  <td colspan="6">
+                    <div class="empty-state-text">No trade executions logged yet in this session.</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Control Center & Engine Settings -->
+      <div class="content-right">
+        <!-- Top Successful Arbitraged Pairs Stats Card (Bar Diagram / Ranking) -->
+        <div class="panel-box panel-pair-stats">
+          <div class="panel-header py-2">
+            <div class="panel-title-group">
+              <svg class="panel-icon text-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+              <h2>Top Arbitraged Pairs</h2>
+            </div>
+            <div class="pairs-win-tag">
+              <span class="text-muted">Win Rate:</span>
+              <strong class="text-emerald" id="pair-stat-winrate">100%</strong>
+            </div>
+          </div>
+          <div class="panel-body py-2" id="pair-stats-container">
+            <div class="pair-bar-chart" id="pair-bar-chart">
+              <!-- Empty state: visual faint bar track placeholders -->
+              <div class="pair-chart-empty" id="pair-chart-empty">
+                <div class="empty-bar-row">
+                  <div class="empty-bar-label"><span class="rank-num">#1</span> Awaiting 1st Fill</div>
+                  <div class="empty-bar-track"><div class="empty-bar-fill w-70"></div></div>
+                  <div class="empty-bar-val">0 wins</div>
+                </div>
+                <div class="empty-bar-row">
+                  <div class="empty-bar-label"><span class="rank-num">#2</span> Scanning Triangles</div>
+                  <div class="empty-bar-track"><div class="empty-bar-fill w-45"></div></div>
+                  <div class="empty-bar-val">0 wins</div>
+                </div>
+                <div class="empty-bar-row">
+                  <div class="empty-bar-label"><span class="rank-num">#3</span> Real-time PnL Rank</div>
+                  <div class="empty-bar-track"><div class="empty-bar-fill w-25"></div></div>
+                  <div class="empty-bar-val">0 wins</div>
+                </div>
+              </div>
+              <!-- Live filled dynamic bar rows -->
+              <div class="pair-chart-bars" id="pair-chart-bars" style="display: none;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Control Center Panel -->
+        <div class="panel-box panel-controls">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <svg class="panel-icon text-cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              <h2>Live Parameter Controls</h2>
+            </div>
+          </div>
+          <div class="panel-body">
+            <!-- Mode Switcher -->
+            <div class="form-group mb-4">
+              <label>Execution Mode</label>
+              <div class="mode-switch-container">
+                <button type="button" class="btn-mode-toggle active" id="btn-mode-paper" data-mode="paper" onclick="window.setModePaper()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                  Paper Simulation
+                </button>
+                <button type="button" class="btn-mode-toggle" id="btn-mode-live" data-mode="live" onclick="window.openLiveAuthModal()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                  Live Binance
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Binance Connected Account Badge (Visible only in Live Mode when connected) -->
+            <div class="binance-api-card" id="binance-api-card" style="display: none;">
+              <div class="api-card-header">
+                <span class="api-title text-emerald">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon text-emerald"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                  Binance Live Spot
+                </span>
+                <span class="badge-pill bg-success-soft" id="api-status-badge">LIVE ACTIVE</span>
+              </div>
+              <div class="api-card-body">
+                <div class="live-balance-box" id="live-balance-box">
+                  <div class="bal-row">
+                    <span class="bal-label">Spot USDT Balance:</span>
+                    <span class="bal-val font-mono text-emerald" id="live-usdt-bal">$0.00 USDT</span>
+                  </div>
+                  <div class="bal-row">
+                    <span class="bal-label">BNB Balance (Fees):</span>
+                    <span class="bal-val font-mono text-yellow" id="live-bnb-bal">0.0000 BNB</span>
+                  </div>
+                  <div class="bal-row">
+                    <span class="bal-label">Spot Permissions:</span>
+                    <span class="bal-val text-emerald font-weight-600" id="live-can-trade">CAN_TRADE</span>
+                  </div>
+                </div>
+                <button type="button" class="btn-disconnect-api mt-2" id="btn-reconfigure-keys" onclick="window.openLiveAuthModal()">
+                  🔑 Change API Keys / Reconnect
+                </button>
+              </div>
+            </div>
+
+            <!-- Parameters Form -->
+            <form id="form-config" class="config-form mt-3">
+              <!-- Section 1: Execution & Capital -->
+              <div class="form-section-header">
+                <span class="section-title">⚡ Trading Capital & Execution</span>
+              </div>
+
+              <!-- Capital Amount -->
+              <div class="form-group">
+                <label for="input-capital">Capital Per Trade Cycle</label>
+                <div class="input-with-addon">
+                  <span class="addon">$</span>
+                  <input type="number" id="input-capital" step="10" min="10" max="50000" value="100.00" required>
+                  <span class="addon font-mono">USDT</span>
+                </div>
+              </div>
+
+              <!-- Min Profit Percent -->
+              <div class="form-group">
+                <label for="input-min-profit">Min Net Profit Threshold (%)</label>
+                <div class="input-with-addon">
+                  <input type="number" id="input-min-profit" step="0.01" min="0.01" max="10" value="0.10" required>
+                  <span class="addon font-mono">%</span>
+                </div>
+                <span class="form-hint">Only executes when net spread exceeds this threshold</span>
+              </div>
+
+              <!-- Fee Rate & BNB Discount -->
+              <div class="form-group">
+                <label for="input-fee-rate">Taker Fee Rate per Leg</label>
+                <div class="input-with-addon">
+                  <input type="number" id="input-fee-rate" step="0.00005" min="0" max="0.01" value="0.00075" required>
+                  <span class="addon font-mono">(0.075%)</span>
+                </div>
+                <div class="checkbox-row mt-2">
+                  <input type="checkbox" id="input-bnb-discount" checked>
+                  <label for="input-bnb-discount">Use 25% BNB Fee Discount</label>
+                </div>
+              </div>
+
+              <!-- Section 2: HFT Scanner & Routes -->
+              <div class="form-section-header mt-2">
+                <span class="section-title">📡 HFT Engine & Scanner Setup</span>
+              </div>
+
+              <!-- Tracked Triangular Paths -->
+              <div class="form-group">
+                <label for="input-tracked-triangles">Tracked Scanner Paths (Volume)</label>
+                <div class="input-with-addon">
+                  <select id="input-tracked-triangles" class="form-select">
+                    <option value="100">100 paths (Ultra High-Speed / Top 20 Assets)</option>
+                    <option value="250">250 paths (High Liquidity)</option>
+                    <option value="350" selected>350 paths (Recommended / Balanced)</option>
+                    <option value="500">500 paths (Extended Coverage)</option>
+                    <option value="1000">1000 paths (Deep Market Scanner)</option>
+                  </select>
+                </div>
+                <span class="form-hint">Number of 3-leg cycles evaluated simultaneously</span>
+              </div>
+
+              <!-- Radar Display Limit -->
+              <div class="form-group">
+                <label for="input-radar-limit">Radar Display Active Routes</label>
+                <div class="input-with-addon">
+                  <select id="input-radar-limit" class="form-select">
+                    <option value="15">15 active routes (Compact)</option>
+                    <option value="30">30 active routes (Standard)</option>
+                    <option value="50" selected>50 active routes (Recommended)</option>
+                    <option value="100">100 active routes (Extended)</option>
+                  </select>
+                </div>
+                <span class="form-hint">Number of top routes rendered in Radar table</span>
+              </div>
+
+              <!-- Section 3: Risk Guard & Limits -->
+              <div class="form-section-header mt-2">
+                <span class="section-title">🛡️ Risk Guards & Circuit Breakers</span>
+              </div>
+
+              <!-- Latency Guard -->
+              <div class="form-group">
+                <label for="input-max-latency">Max Allowable Latency (ms)</label>
+                <div class="input-with-addon">
+                  <input type="number" id="input-max-latency" step="10" min="10" max="2000" value="200" required>
+                  <span class="addon font-mono">ms</span>
+                </div>
+                <span class="form-hint">Stale quotes older than this are discarded</span>
+              </div>
+
+              <!-- Slippage Tolerance -->
+              <div class="form-group">
+                <label for="input-max-slippage">Max Slippage Tolerance (%)</label>
+                <div class="input-with-addon">
+                  <input type="number" id="input-max-slippage" step="0.01" min="0.01" max="1.0" value="0.10" required>
+                  <span class="addon font-mono">%</span>
+                </div>
+              </div>
+
+              <!-- Daily Loss Limit -->
+              <div class="form-group">
+                <label for="input-max-daily-loss">Max Daily Loss Limit (Circuit Breaker)</label>
+                <div class="input-with-addon">
+                  <span class="addon">$</span>
+                  <input type="number" id="input-max-daily-loss" step="5" min="10" max="10000" value="50.00" required>
+                  <span class="addon font-mono">USDT</span>
+                </div>
+                <span class="form-hint">Auto-stops trading if cumulative daily loss reaches this</span>
+              </div>
+
+              <button type="submit" class="btn-save-config mt-2" id="btn-save-config">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                Apply Parameters
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Live Mode Authentication & Confirmation Modal -->
+    <div id="modal-live-auth" class="modal-overlay" style="display: none;">
+      <div class="modal-card modal-card-auth">
+        <div class="modal-header">
+          <div class="modal-icon-danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          </div>
+          <div>
+            <h3 class="modal-title">Live Binance Spot Trading Setup</h3>
+            <p class="modal-subtitle">Hubungkan Binance API Key & Secret untuk memulai Live Trading</p>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="input-api-key">Binance API Key</label>
+            <div class="input-with-addon">
+              <input type="password" id="input-api-key" placeholder="Paste your Binance API Key..." autocomplete="off">
+              <button type="button" class="btn-toggle-eye" id="btn-toggle-key" onclick="window.toggleKeyVis('key')" title="Toggle visibility">👁</button>
+            </div>
+          </div>
+
+          <div class="form-group mt-2">
+            <label for="input-api-secret">Binance Secret Key</label>
+            <div class="input-with-addon">
+              <input type="password" id="input-api-secret" placeholder="Paste your Binance Secret Key..." autocomplete="off">
+              <button type="button" class="btn-toggle-eye" id="btn-toggle-secret" onclick="window.toggleKeyVis('secret')" title="Toggle visibility">👁</button>
+            </div>
+          </div>
+
+          <!-- Alert / Verification Message Box -->
+          <div id="modal-auth-alert" class="modal-auth-alert" style="display: none;"></div>
+
+          <div class="modal-checklist mt-3">
+            <div class="modal-checklist-item">
+              <span class="text-emerald">✔</span>
+              <span>Pastikan API Key memiliki izin <strong>Enable Spot & Margin Trading</strong>.</span>
+            </div>
+            <div class="modal-checklist-item">
+              <span class="text-danger">✖</span>
+              <span>Demi keamanan, <strong>JANGAN</strong> aktifkan izin <em>Enable Withdrawals</em>.</span>
+            </div>
+            <div class="modal-checklist-item">
+              <span class="text-yellow">⚠️</span>
+              <span>Mode Live hanya akan aktif setelah API Key berhasil diverifikasi bursa Binance.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-modal-cancel" id="btn-modal-cancel" onclick="window.closeLiveAuthModal()">Batal (Tetap di Paper Mode)</button>
+          <button type="button" class="btn-modal-confirm" id="btn-modal-verify" onclick="window.verifyAndActivateLive()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            <span id="modal-verify-text">Verifikasi & Aktifkan Live Mode</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="/app.js?v=4.0"></script>
+</body>
+</html>
