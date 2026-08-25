@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,11 +40,12 @@ type Executor struct {
 	riskManager            *risk.RiskManager
 	client                 *exchange.BinanceClient
 	executionCooldownUntil time.Time
+	logFilePath            string
 }
 
-// NewExecutor creates an executor instance.
+// NewExecutor creates an executor instance and loads any persisted logs from disk.
 func NewExecutor(mode string, initialCapital float64, rm *risk.RiskManager, client *exchange.BinanceClient) *Executor {
-	return &Executor{
+	e := &Executor{
 		mode:                 mode,
 		virtualWalletBalance: initialCapital,
 		initialBalance:       initialCapital,
@@ -49,7 +53,57 @@ func NewExecutor(mode string, initialCapital float64, rm *risk.RiskManager, clie
 		recentLogs:           make([]ExecutionResult, 0, 50),
 		riskManager:          rm,
 		client:               client,
+		logFilePath:          filepath.Join("logs", "executions.json"),
 	}
+	e.loadLogs()
+	return e
+}
+
+// loadLogs reads persisted execution log from disk and restores state.
+func (e *Executor) loadLogs() {
+	data, err := os.ReadFile(e.logFilePath)
+	if err != nil {
+		return // file doesn't exist yet — first run
+	}
+	var persisted persistedState
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		fmt.Printf("[KArbit] Warning: failed to parse execution log: %v\n", err)
+		return
+	}
+	e.recentLogs = persisted.Logs
+	e.cumulativePnL = persisted.CumulativePnL
+	e.virtualWalletBalance = persisted.WalletBalance
+	atomic.StoreUint64(&e.totalTrades, persisted.TotalTrades)
+	atomic.StoreUint64(&e.profitableTrades, persisted.ProfitableTrades)
+	if len(e.recentLogs) > 0 {
+		fmt.Printf("[KArbit] Restored %d execution log entries from disk.\n", len(e.recentLogs))
+	}
+}
+
+// persistedState is the JSON schema written to disk.
+type persistedState struct {
+	Logs             []ExecutionResult `json:"logs"`
+	CumulativePnL    float64           `json:"cumulative_pnl"`
+	WalletBalance    float64           `json:"wallet_balance"`
+	TotalTrades      uint64            `json:"total_trades"`
+	ProfitableTrades uint64            `json:"profitable_trades"`
+}
+
+// saveLogs writes current execution state to disk (called WITHOUT holding e.mu).
+func (e *Executor) saveLogs() {
+	state := persistedState{
+		Logs:             e.recentLogs,
+		CumulativePnL:    e.cumulativePnL,
+		WalletBalance:    e.virtualWalletBalance,
+		TotalTrades:      atomic.LoadUint64(&e.totalTrades),
+		ProfitableTrades: atomic.LoadUint64(&e.profitableTrades),
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(e.logFilePath), 0755)
+	_ = os.WriteFile(e.logFilePath, data, 0644)
 }
 
 // SetMode updates the execution mode dynamically (paper or live).
@@ -248,6 +302,7 @@ func (e *Executor) appendLog(res ExecutionResult) {
 		e.recentLogs = e.recentLogs[1:]
 	}
 	e.recentLogs = append(e.recentLogs, res)
+	e.saveLogs()
 }
 
 // ClearLogs clears the trade log history and resets simulation metrics.
@@ -259,6 +314,7 @@ func (e *Executor) ClearLogs() {
 	atomic.StoreUint64(&e.totalTrades, 0)
 	atomic.StoreUint64(&e.profitableTrades, 0)
 	e.recentLogs = make([]ExecutionResult, 0, e.maxLogs)
+	e.saveLogs()
 }
 
 // ResetSession resets all simulated trading performance metrics and logs.
