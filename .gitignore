@@ -1,0 +1,13 @@
+# Compiled binary
+karbit
+
+# Log files
+logs/
+*.log
+
+# Config with secrets
+config.json
+
+# OS files
+.DS_Store
+Thumbs.db
