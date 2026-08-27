@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,6 +112,8 @@ func (ws *WebServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/status", ws.handleAPIStatus)
 	mux.HandleFunc("/api/config", ws.handleAPIConfig)
 	mux.HandleFunc("/api/binance-auth", ws.handleBinanceAuth)
+	mux.HandleFunc("/api/security/verify-pin", ws.handleVerifyPIN)
+	mux.HandleFunc("/api/security/change-pin", ws.handleChangePIN)
 	mux.HandleFunc("/api/test-execution", ws.handleTestExecution)
 	mux.HandleFunc("/api/clear-log", ws.handleClearLog)
 
@@ -197,8 +201,9 @@ func (ws *WebServer) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 
 // BinanceAuthRequest holds user credentials for live Binance trading.
 type BinanceAuthRequest struct {
-	APIKey    string `json:"api_key"`
-	APISecret string `json:"api_secret"`
+	APIKey      string `json:"api_key"`
+	APISecret   string `json:"api_secret"`
+	SecurityPIN string `json:"security_pin"`
 }
 
 func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
@@ -213,13 +218,31 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.APIKey == "" || req.APISecret == "" {
-		http.Error(w, "API Key and Secret must not be empty", http.StatusBadRequest)
+	key := strings.TrimSpace(req.APIKey)
+	secret := strings.TrimSpace(req.APISecret)
+
+	if key == "" || secret == "" {
+		envKey, envSecret := getEnvCredentials()
+		if key == "" {
+			key = envKey
+		}
+		if secret == "" {
+			secret = envSecret
+		}
+	}
+
+	if key == "" || secret == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Binance API Key dan Secret belum diatur di file .env server!",
+		})
 		return
 	}
 
 	if ws.onTestAuth != nil {
-		info, err := ws.onTestAuth(req.APIKey, req.APISecret)
+		info, err := ws.onTestAuth(key, secret)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
@@ -233,7 +256,7 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
-			"message": "Binance API Key verified successfully!",
+			"message": "Binance API Key verified successfully from .env!",
 			"account": info,
 		})
 		return
@@ -353,4 +376,141 @@ func (ws *WebServer) handleClearLog(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Trade execution log cleared successfully",
 	})
+}
+
+// Credentials Helper (.env file storage)
+func getEnvCredentials() (string, string) {
+	var key, secret string
+	if envData, err := os.ReadFile(".env"); err == nil {
+		lines := strings.Split(string(envData), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "BINANCE_API_KEY=") {
+				key = strings.Trim(strings.TrimPrefix(line, "BINANCE_API_KEY="), `"' `)
+			}
+			if strings.HasPrefix(line, "BINANCE_API_SECRET=") {
+				secret = strings.Trim(strings.TrimPrefix(line, "BINANCE_API_SECRET="), `"' `)
+			}
+		}
+	}
+	if key == "" {
+		key = os.Getenv("BINANCE_API_KEY")
+	}
+	if secret == "" {
+		secret = os.Getenv("BINANCE_API_SECRET")
+	}
+	return key, secret
+}
+
+// Security PIN Helpers (.env file storage)
+func getSecurityPIN() string {
+	envPath := ".env"
+	file, err := os.Open(envPath)
+	if err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "SECURITY_PIN=") {
+				pin := strings.TrimPrefix(line, "SECURITY_PIN=")
+				pin = strings.Trim(pin, `"' `)
+				if pin != "" {
+					return pin
+				}
+			}
+		}
+	}
+	if envPin := os.Getenv("SECURITY_PIN"); envPin != "" {
+		return envPin
+	}
+	return "npma_0"
+}
+
+func saveSecurityPIN(newPIN string) error {
+	envPath := ".env"
+	var lines []string
+	found := false
+
+	if file, err := os.Open(envPath); err == nil {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(strings.TrimSpace(line), "SECURITY_PIN=") {
+				lines = append(lines, fmt.Sprintf("SECURITY_PIN=%s", newPIN))
+				found = true
+			} else {
+				lines = append(lines, line)
+			}
+		}
+		file.Close()
+	}
+
+	if !found {
+		lines = append(lines, fmt.Sprintf("SECURITY_PIN=%s", newPIN))
+	}
+
+	content := strings.Join(lines, "\n") + "\n"
+	return os.WriteFile(envPath, []byte(content), 0600)
+}
+
+type VerifyPINRequest struct {
+	PIN string `json:"pin"`
+}
+
+func (ws *WebServer) handleVerifyPIN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req VerifyPINRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Format JSON tidak valid"})
+		return
+	}
+	correctPIN := getSecurityPIN()
+	if strings.TrimSpace(req.PIN) != correctPIN {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Kode keamanan (PIN) salah! Akses ditolak."})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Kode keamanan (PIN) terverifikasi!"})
+}
+
+type ChangePINRequest struct {
+	CurrentPIN string `json:"current_pin"`
+	NewPIN     string `json:"new_pin"`
+}
+
+func (ws *WebServer) handleChangePIN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req ChangePINRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Format JSON tidak valid"})
+		return
+	}
+	correctPIN := getSecurityPIN()
+	if strings.TrimSpace(req.CurrentPIN) != correctPIN {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Kode keamanan lama (Current PIN) salah!"})
+		return
+	}
+	newTrimmed := strings.TrimSpace(req.NewPIN)
+	if newTrimmed == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Kode keamanan baru tidak boleh kosong!"})
+		return
+	}
+	if err := saveSecurityPIN(newTrimmed); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("Gagal menyimpan ke .env: %v", err)})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Kode keamanan (PIN) berhasil diubah dan disimpan di .env!"})
 }

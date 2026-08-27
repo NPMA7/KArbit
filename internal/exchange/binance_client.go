@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,20 +26,77 @@ type BinanceClient struct {
 	httpClient *http.Client
 }
 
-// NewBinanceClient creates a client configured with optimized HTTP/2 connection pooling.
+var (
+	binanceIPCache   string
+	binanceIPCacheMu sync.RWMutex
+)
+
+// resolveBinanceHost resolves Binance hostnames using Cloudflare DoH to bypass local ISP DNS poisoning.
+func resolveBinanceHost(host string) string {
+	if !strings.Contains(host, "binance.com") {
+		return host
+	}
+
+	binanceIPCacheMu.RLock()
+	cached := binanceIPCache
+	binanceIPCacheMu.RUnlock()
+	if cached != "" {
+		return cached
+	}
+
+	dohURL := fmt.Sprintf("https://cloudflare-dns.com/dns-query?name=%s&type=A", host)
+	req, _ := http.NewRequest(http.MethodGet, dohURL, nil)
+	req.Header.Set("accept", "application/dns-json")
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode == 200 {
+		defer resp.Body.Close()
+		var dohRes struct {
+			Answer []struct {
+				Type int    `json:"type"`
+				Data string `json:"data"`
+			} `json:"Answer"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&dohRes); err == nil {
+			for _, ans := range dohRes.Answer {
+				if ans.Type == 1 && ans.Data != "" && !strings.Contains(ans.Data, "36.86.") && !strings.Contains(ans.Data, "internetpositif") {
+					binanceIPCacheMu.Lock()
+					binanceIPCache = ans.Data
+					binanceIPCacheMu.Unlock()
+					return ans.Data
+				}
+			}
+		}
+	}
+
+	// Fallback to CloudFront IP if DoH fails
+	return "13.249.239.121"
+}
+
+// NewBinanceClient creates a client configured with optimized HTTP/2 connection pooling and DoH resolution.
 func NewBinanceClient(baseURL, apiKey, apiSecret string) *BinanceClient {
-	if baseURL == "" {
+	if baseURL == "" || strings.Contains(baseURL, "binance.vision") {
 		baseURL = "https://api.binance.com"
 	}
 
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err == nil && strings.Contains(host, "binance.com") {
+				realIP := resolveBinanceHost(host)
+				if realIP != "" && realIP != host {
+					addr = net.JoinHostPort(realIP, port)
+				}
+			}
+			dialer := &net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // Handle environments with local clock skew
+			ServerName: "api.binance.com",
 		},
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 50,

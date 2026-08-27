@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"runtime"
+	"strings"
 )
 
 // Config represents all operational parameters for the KArbit HFT engine.
@@ -89,7 +90,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadConfig loads configuration from a JSON file and overrides with command-line flags if provided.
+// LoadConfig loads configuration from a JSON file and .env file, and overrides with command-line flags if provided.
 func LoadConfig(configPath string) (*Config, error) {
 	cfg := DefaultConfig()
 
@@ -97,6 +98,44 @@ func LoadConfig(configPath string) (*Config, error) {
 		if fileData, err := os.ReadFile(configPath); err == nil {
 			if err := json.Unmarshal(fileData, cfg); err != nil {
 				return nil, err
+			}
+		}
+	}
+
+	// Read from .env file if present
+	if envData, err := os.ReadFile(".env"); err == nil {
+		lines := strings.Split(string(envData), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+				switch k {
+				case "BINANCE_API_KEY":
+					if v != "" {
+						cfg.BinanceAPIKey = v
+					}
+				case "BINANCE_API_SECRET":
+					if v != "" {
+						cfg.BinanceAPISecret = v
+					}
+				case "BINANCE_BASE_URL":
+					if v != "" {
+						cfg.BinanceBaseURL = v
+					}
+				case "BINANCE_WS_URL":
+					if v != "" {
+						cfg.BinanceWSURL = v
+					}
+				case "KARBIT_MODE":
+					if v != "" {
+						cfg.TradingMode = v
+					}
+				}
 			}
 		}
 	}

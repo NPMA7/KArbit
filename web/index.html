@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=4.2">
+  <link rel="stylesheet" href="/style.css?v=6.5">
 </head>
 <body>
   <div class="app-container">
@@ -362,7 +362,7 @@
                 <label for="input-capital">Capital Per Trade Cycle</label>
                 <div class="input-with-addon">
                   <span class="addon">$</span>
-                  <input type="number" id="input-capital" step="10" min="10" max="50000" value="100.00" required>
+                  <input type="number" id="input-capital" step="1" min="5" max="50000" value="10.00" required>
                   <span class="addon font-mono">USDT</span>
                 </div>
               </div>
@@ -473,56 +473,50 @@
     <div id="modal-live-auth" class="modal-overlay" style="display: none;">
       <div class="modal-card modal-card-auth">
         <div class="modal-header">
-          <div class="modal-icon-danger">
+          <div class="modal-icon-danger" style="background: rgba(244, 63, 94, 0.15); border-color: var(--accent-red); color: var(--accent-red);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
           </div>
           <div>
-            <h3 class="modal-title">Live Binance Spot Trading Setup</h3>
-            <p class="modal-subtitle">Hubungkan Binance API Key & Secret untuk memulai Live Trading</p>
+            <h3 class="modal-title">Konfirmasi Live Binance Spot Trading</h3>
+            <p class="modal-subtitle">Kredensial API dimuat aman dari file <code>.env</code> server</p>
           </div>
         </div>
 
         <div class="modal-body">
-          <div class="form-group">
-            <label for="input-api-key">Binance API Key</label>
-            <div class="input-with-addon">
-              <input type="password" id="input-api-key" placeholder="Paste your Binance API Key..." autocomplete="off">
-              <button type="button" class="btn-toggle-eye" id="btn-toggle-key" onclick="window.toggleKeyVis('key')" title="Toggle visibility">👁</button>
+          <div class="api-env-info-box" style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+              <span class="status-dot online"></span>
+              <strong style="color: var(--accent-emerald); font-size: 0.85rem;">Binance API Credentials (.env) Tersimpan</strong>
             </div>
-          </div>
-
-          <div class="form-group mt-2">
-            <label for="input-api-secret">Binance Secret Key</label>
-            <div class="input-with-addon">
-              <input type="password" id="input-api-secret" placeholder="Paste your Binance Secret Key..." autocomplete="off">
-              <button type="button" class="btn-toggle-eye" id="btn-toggle-secret" onclick="window.toggleKeyVis('secret')" title="Toggle visibility">👁</button>
-            </div>
+            <p style="color: var(--text-secondary); font-size: 0.75rem; margin: 0; line-height: 1.5;">
+              Engine akan menghubungkan akun Binance Spot Anda secara langsung menggunakan Kunci API dari file <code>.env</code> server untuk mengeksekusi order riil.
+            </p>
           </div>
 
           <!-- Alert / Verification Message Box -->
           <div id="modal-auth-alert" class="modal-auth-alert" style="display: none;"></div>
 
-          <div class="modal-checklist mt-3">
+          <div class="modal-checklist">
             <div class="modal-checklist-item">
               <span class="text-emerald">✔</span>
-              <span>Pastikan API Key memiliki izin <strong>Enable Spot & Margin Trading</strong>.</span>
+              <span>Order Spot dieksekusi instan dengan tipe <strong>IOC (Immediate-Or-Cancel)</strong>.</span>
             </div>
             <div class="modal-checklist-item">
-              <span class="text-danger">✖</span>
-              <span>Demi keamanan, <strong>JANGAN</strong> aktifkan izin <em>Enable Withdrawals</em>.</span>
+              <span class="text-emerald">✔</span>
+              <span>Proteksi <strong>Circuit Breaker</strong> &amp; <strong>Slippage Guard</strong> tetap aktif 24/7.</span>
             </div>
             <div class="modal-checklist-item">
               <span class="text-yellow">⚠️</span>
-              <span>Mode Live hanya akan aktif setelah API Key berhasil diverifikasi bursa Binance.</span>
+              <span>Pastikan saldo USDT di Akun Spot Anda mencukupi modal per siklus trade.</span>
             </div>
           </div>
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-modal-cancel" id="btn-modal-cancel" onclick="window.closeLiveAuthModal()">Batal (Tetap di Paper Mode)</button>
+          <button type="button" class="btn-modal-cancel" id="btn-modal-cancel" onclick="window.closeLiveAuthModal()">Batal (Tetap di Paper)</button>
           <button type="button" class="btn-modal-confirm" id="btn-modal-verify" onclick="window.verifyAndActivateLive()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            <span id="modal-verify-text">Verifikasi & Aktifkan Live Mode</span>
+            <span id="modal-verify-text">Verifikasi &amp; Aktifkan Live Mode</span>
           </button>
         </div>
       </div>
@@ -532,6 +526,6 @@
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="/app.js?v=4.2"></script>
+  <script src="/app.js?v=6.6"></script>
 </body>
 </html>

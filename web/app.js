@@ -223,32 +223,64 @@ function renderDashboard(d) {
     kpiWalletTitle.textContent = 'BINANCE SPOT BALANCE';
     kpiPnlSubtext.textContent = 'Live Net Profit';
     binanceApiCard.style.display = 'block';
+
+    const curSpotBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 0;
+    if (liveUsdtBal) {
+      liveUsdtBal.textContent = `$${curSpotBal.toFixed(2)} USDT`;
+    }
+    if (liveBnbBal) {
+      const curBnb = (liveAccountData && liveAccountData.BNBBalance) ? liveAccountData.BNBBalance : 0;
+      liveBnbBal.textContent = `${curBnb.toFixed(4)} BNB`;
+    }
+    if (liveCanTrade) {
+      liveCanTrade.textContent = 'ENABLED (SPOT)';
+    }
   } else {
     modeBadge.className = 'mode-pill';
     modeText.textContent = 'PAPER TRADING';
     kpiWalletTitle.textContent = 'WALLET BALANCE (PAPER)';
     kpiPnlSubtext.textContent = 'Simulated Net Profit';
+    binanceApiCard.style.display = 'none';
   }
 
+  // Filter execution logs for the current active mode
+  const allLogs = d.recent_execution_log || [];
+  const activeModeLogs = allLogs.filter((log) => {
+    const isLogLive = (log.mode || '').toLowerCase() === 'live';
+    return isLive ? isLogLive : !isLogLive;
+  });
+
+  // Mode-specific PnL & Trade stats
+  let modePnL = 0;
+  let modeSuccessCount = 0;
+  activeModeLogs.forEach((log) => {
+    if (log.is_success) {
+      modeSuccessCount++;
+      const opp = log.opportunity || {};
+      modePnL += log.actual_net_profit_usdt || opp.net_profit_usdt || 0;
+    }
+  });
+
   // 2. KPI Cards
-  const pnl = d.cumulative_pnl || 0;
+  const pnl = modePnL;
   const pnlSign = pnl >= 0 ? '+' : '-';
   const pnlColorClass = pnl >= 0 ? 'text-emerald' : 'text-danger';
   kpiPnlVal.textContent = `${pnlSign}$${Math.abs(pnl).toFixed(4)}`;
   kpiPnlVal.className = `kpi-primary-val font-mono ${pnlColorClass}`;
 
-  const initialCap = d.trade_amount_usdt || 100;
+  const initialCap = d.trade_amount_usdt || 10;
   const pnlPct = (pnl / initialCap) * 100;
   kpiPnlPct.textContent = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
   kpiPnlPct.className = `badge-pill ${pnl >= 0 ? 'bg-success-soft' : 'bg-danger-soft'}`;
 
   // Wallet
-  if (isLive && d.has_live_api_keys && d.live_account_balance > 0) {
-    kpiWalletVal.textContent = `$${d.live_account_balance.toFixed(2)}`;
+  if (isLive) {
+    const liveBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 0;
+    kpiWalletVal.textContent = `$${liveBal.toFixed(2)}`;
   } else {
-    kpiWalletVal.textContent = `$${(d.wallet_balance || 100).toFixed(2)}`;
+    kpiWalletVal.textContent = `$${(d.wallet_balance || 10).toFixed(2)}`;
   }
-  kpiCapitalVal.textContent = `$${(d.trade_amount_usdt || 100).toFixed(2)}`;
+  kpiCapitalVal.textContent = `$${(d.trade_amount_usdt || 10).toFixed(2)}`;
 
   // Throughput
   kpiEvalsSec.innerHTML = `${(d.evaluations_per_sec || 0).toLocaleString()} <span class="val-unit">evals/s</span>`;
@@ -258,9 +290,9 @@ function renderDashboard(d) {
   }
   kpiTriCount.textContent = (d.total_triangles || 1664).toLocaleString();
 
-  // Trade stats
-  const totalTrades = d.total_trades || 0;
-  const profitTrades = d.profitable_trades || 0;
+  // Trade stats (Mode Specific)
+  const totalTrades = activeModeLogs.length;
+  const profitTrades = modeSuccessCount;
   kpiTradesCount.innerHTML = `${totalTrades} <span class="val-unit">trades</span>`;
   const winRate = totalTrades > 0 ? ((profitTrades / totalTrades) * 100).toFixed(0) : '100';
   kpiWinrate.textContent = `${winRate}% Win`;
@@ -281,9 +313,9 @@ function renderDashboard(d) {
   // 3. Live Triangular Spread Radar Table
   renderRadarTable(d);
 
-  // 4. Recent Executions Log & Top Pairs Stats
-  renderExecutionsTable(d.recent_execution_log);
-  renderPairStats(d.recent_execution_log);
+  // 4. Recent Executions Log & Top Pairs Stats (Active Mode Only)
+  renderExecutionsTable(activeModeLogs);
+  renderPairStats(activeModeLogs);
 }
 
 /**
@@ -430,10 +462,13 @@ function renderRadarTable(d) {
  */
 function renderExecutionsTable(logs) {
   if (!logs || logs.length === 0) {
+    const isLiveMode = currentMode === 'live';
     execTbody.innerHTML = `
       <tr class="row-empty">
         <td colspan="6">
-          <div class="empty-state-text">No trade executions logged yet in this session.</div>
+          <div class="empty-state-text" style="color: var(--text-muted); font-size: 0.82rem;">
+            ${isLiveMode ? '🚀 Mode Live Binance Aktif. Belum ada order riil yang dieksekusi pada sesi ini.' : '📊 Mode Paper Simulation. Belum ada trade simulasi yang tercatat.'}
+          </div>
         </td>
       </tr>
     `;
@@ -588,42 +623,16 @@ window.closeLiveAuthModal = function() {
   }
 };
 
-window.toggleKeyVis = function(type) {
-  const kIn = document.getElementById('input-api-key');
-  const sIn = document.getElementById('input-api-secret');
-  const kBtn = document.getElementById('btn-toggle-key');
-  const sBtn = document.getElementById('btn-toggle-secret');
-  if (type === 'key' && kIn && kBtn) {
-    toggleInputVisibility(kIn, kBtn);
-  } else if (sIn && sBtn) {
-    toggleInputVisibility(sIn, sBtn);
-  }
-};
-
 window.verifyAndActivateLive = async function() {
-  const kIn = document.getElementById('input-api-key');
-  const sIn = document.getElementById('input-api-secret');
   const modalVerifyBtn = document.getElementById('btn-modal-verify');
   const modalVerifyTxt = document.getElementById('modal-verify-text');
   const modalAlert = document.getElementById('modal-auth-alert');
 
-  const key = kIn ? kIn.value.trim() : '';
-  const secret = sIn ? sIn.value.trim() : '';
-
-  if (!key || !secret) {
-    if (modalAlert) {
-      modalAlert.className = 'modal-auth-alert alert-error';
-      modalAlert.innerHTML = '⚠️ Harap masukkan Binance API Key dan Secret Key lengkap.';
-      modalAlert.style.display = 'block';
-    }
-    return;
-  }
-
   if (modalVerifyBtn) modalVerifyBtn.disabled = true;
-  if (modalVerifyTxt) modalVerifyTxt.textContent = 'Memverifikasi ke Binance...';
+  if (modalVerifyTxt) modalVerifyTxt.textContent = 'Menghubungkan ke Binance...';
   if (modalAlert) {
     modalAlert.className = 'modal-auth-alert alert-loading';
-    modalAlert.innerHTML = '⏳ Menghubungi API Binance dan memverifikasi izin Spot Trading...';
+    modalAlert.innerHTML = '⏳ Menghubungi API Binance dan memverifikasi izin Spot Trading dari .env...';
     modalAlert.style.display = 'block';
   }
 
@@ -631,7 +640,7 @@ window.verifyAndActivateLive = async function() {
     const resp = await fetch('/api/binance-auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, api_secret: secret }),
+      body: JSON.stringify({}),
     });
 
     const res = await resp.json();
@@ -654,15 +663,13 @@ window.verifyAndActivateLive = async function() {
         setModeUI('live');
         await updateRuntimeConfig({
           trading_mode: 'live',
-          binance_api_key: key,
-          binance_api_secret: secret,
         });
         showToast('🚀 Live Binance Trading BERHASIL DIAKTIFKAN!', 'success');
       }, 700);
     } else {
       if (modalAlert) {
         modalAlert.className = 'modal-auth-alert alert-error';
-        modalAlert.innerHTML = `❌ Verifikasi Gagal: ${res.error || 'API Key / Secret salah atau IP tidak diizinkan.'}`;
+        modalAlert.innerHTML = `❌ Verifikasi Gagal: ${res.error || 'API Key / Secret di .env salah atau IP tidak diizinkan.'}`;
         modalAlert.style.display = 'block';
       }
       setModeUI('paper');
@@ -670,7 +677,7 @@ window.verifyAndActivateLive = async function() {
   } catch (err) {
     if (modalAlert) {
       modalAlert.className = 'modal-auth-alert alert-error';
-      modalAlert.innerHTML = '❌ Gagal terhubung ke engine backend. Silakan coba lagi.';
+      modalAlert.innerHTML = `❌ Gagal terhubung ke engine backend: ${err.message}`;
       modalAlert.style.display = 'block';
     }
     setModeUI('paper');
@@ -713,19 +720,6 @@ function setupEventListeners() {
   if (btnModalVerify) btnModalVerify.addEventListener('click', window.verifyAndActivateLive);
   if (btnReconfigureKeys) btnReconfigureKeys.addEventListener('click', window.openLiveAuthModal);
 
-  // Toggle Visibility Eye Buttons
-  if (btnToggleKey) {
-    btnToggleKey.addEventListener('click', () => {
-      toggleInputVisibility(inputApiKey, btnToggleKey);
-    });
-  }
-
-  if (btnToggleSecret) {
-    btnToggleSecret.addEventListener('click', () => {
-      toggleInputVisibility(inputApiSecret, btnToggleSecret);
-    });
-  }
-
   // Parameters Form Submit
   if (formConfig) {
     formConfig.addEventListener('submit', async (e) => {
@@ -736,7 +730,7 @@ function setupEventListeners() {
         trade_amount_usdt: parseFloat(inputCapital.value),
         min_profit_percent: parseFloat(inputMinProfit.value),
         fee_rate: parseFloat(inputFeeRate.value),
-        use_bnb_discount: inputBnbDiscount.checked,
+        use_bnb_discount: inputBnbDiscount ? inputBnbDiscount.checked : true,
         max_latency_ms: parseInt(inputMaxLatency.value, 10),
         max_tracked_triangles: inputTrackedTriangles ? parseInt(inputTrackedTriangles.value, 10) : 350,
         radar_display_limit: inputRadarLimit ? parseInt(inputRadarLimit.value, 10) : 50,
@@ -744,7 +738,7 @@ function setupEventListeners() {
         max_daily_loss_usdt: inputMaxDailyLoss ? parseFloat(inputMaxDailyLoss.value) : 50.0,
       };
 
-      if (inputApiKey.value.trim() && inputApiSecret.value.trim()) {
+      if (inputApiKey && inputApiSecret && inputApiKey.value && inputApiSecret.value) {
         payload.binance_api_key = inputApiKey.value.trim();
         payload.binance_api_secret = inputApiSecret.value.trim();
       }
