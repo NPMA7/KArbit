@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=6.5">
+  <link rel="stylesheet" href="/style.css?v=7.5">
 </head>
 <body>
   <div class="app-container">
@@ -34,8 +34,8 @@
           <span class="status-label" id="ws-status-text">CONNECTING...</span>
           <span class="latency-badge" id="ws-latency-val">-- ms</span>
         </div>
-        <div class="mode-pill" id="mode-badge">
-          <span class="mode-tag" id="mode-text">PAPER TRADING</span>
+        <div class="mode-pill live" id="mode-badge">
+          <span class="mode-tag" id="mode-text">LIVE BINANCE SPOT</span>
         </div>
       </div>
 
@@ -305,26 +305,11 @@
             </div>
           </div>
           <div class="panel-body">
-            <!-- Mode Switcher -->
-            <div class="form-group mb-4">
-              <label>Execution Mode</label>
-              <div class="mode-switch-container">
-                <button type="button" class="btn-mode-toggle active" id="btn-mode-paper" data-mode="paper" onclick="window.setModePaper()">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                  Paper Simulation
-                </button>
-                <button type="button" class="btn-mode-toggle" id="btn-mode-live" data-mode="live" onclick="window.openLiveAuthModal()">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                  Live Binance
-                </button>
-              </div>
-            </div>
-
-            <!-- Live Binance Connected Account Badge (Visible only in Live Mode when connected) -->
-            <div class="binance-api-card" id="binance-api-card" style="display: none;">
+            <!-- Live Binance Connected Account Status -->
+            <div class="binance-api-card" id="binance-api-card" style="display: block; margin-bottom: 14px;">
               <div class="api-card-header">
                 <span class="api-title text-emerald">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon text-emerald"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon text-emerald"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                   Binance Live Spot
                 </span>
                 <span class="badge-pill bg-success-soft" id="api-status-badge">LIVE ACTIVE</span>
@@ -332,21 +317,10 @@
               <div class="api-card-body">
                 <div class="live-balance-box" id="live-balance-box">
                   <div class="bal-row">
-                    <span class="bal-label">Spot USDT Balance:</span>
-                    <span class="bal-val font-mono text-emerald" id="live-usdt-bal">$0.00 USDT</span>
-                  </div>
-                  <div class="bal-row">
                     <span class="bal-label">BNB Balance (Fees):</span>
                     <span class="bal-val font-mono text-yellow" id="live-bnb-bal">0.0000 BNB</span>
                   </div>
-                  <div class="bal-row">
-                    <span class="bal-label">Spot Permissions:</span>
-                    <span class="bal-val text-emerald font-weight-600" id="live-can-trade">CAN_TRADE</span>
-                  </div>
                 </div>
-                <button type="button" class="btn-disconnect-api mt-2" id="btn-reconfigure-keys" onclick="window.openLiveAuthModal()">
-                  🔑 Change API Keys / Reconnect
-                </button>
               </div>
             </div>
 
@@ -522,10 +496,53 @@
       </div>
     </div>
 
+    <!-- Security PIN Verification Modal -->
+    <div id="modal-security-pin" class="modal-overlay" style="display: none;">
+      <div class="modal-card" style="max-width: 420px;">
+        <div class="modal-header">
+          <div class="modal-title-row">
+            <div class="modal-icon-badge" style="background: rgba(245, 158, 11, 0.12); color: var(--accent-yellow); border-color: rgba(245, 158, 11, 0.3);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="modal-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            </div>
+            <div>
+              <h3 class="modal-title">Konfirmasi Keamanan (PIN)</h3>
+              <p class="modal-subtitle">Masukkan Security PIN untuk otorisasi perubahan parameter</p>
+            </div>
+          </div>
+          <button type="button" class="btn-modal-close" onclick="window.closeSecurityPinModal()">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="input-security-pin" style="color: var(--text-primary); font-size: 0.82rem;">SECURITY PIN</label>
+            <div class="input-with-addon">
+              <span class="addon">🔒</span>
+              <input type="password" id="input-security-pin" placeholder="Masukkan PIN keamanan..." style="font-family: var(--font-mono); font-size: 0.95rem; letter-spacing: 2px;" autocomplete="off" required>
+              <button type="button" class="btn-input-addon" id="btn-toggle-security-pin" onclick="window.togglePinVisibility()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="modal-pin-alert" class="modal-auth-alert" style="display: none; margin-bottom: 10px;"></div>
+
+          
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-modal-cancel" onclick="window.closeSecurityPinModal()">Batal</button>
+          <button type="button" class="btn-modal-confirm" id="btn-confirm-apply-pin" onclick="window.submitPinAndApply()" style="background: linear-gradient(135deg, #f59e0b, #d97706); border-color: rgba(245, 158, 11, 0.4);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="api-icon"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span id="pin-confirm-text">Konfirmasi &amp; Terapkan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="/app.js?v=6.6"></script>
+  <script src="/app.js?v=7.5"></script>
 </body>
 </html>

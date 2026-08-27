@@ -69,8 +69,8 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		BaseCurrency:         "USDT",
-		TradingMode:          "paper",
-		TradeAmountUSDT:      100.0,
+		TradingMode:          "live",
+		TradeAmountUSDT:      10.0,
 		MinProfitPercent:     0.05,
 		FeeRate:              0.00075, // 0.075% taker fee with BNB discount
 		UseBNBDiscount:       true,

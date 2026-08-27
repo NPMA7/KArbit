@@ -3,15 +3,15 @@ module.exports = {
     {
       name: 'karbit',
       script: './karbit',
-      args: '-mode paper -capital 100 -min-profit 0.05 -web-port 8080',
+      args: '-mode live -capital 10 -min-profit 0.05 -web-port 8080',
       cwd: '/var/www/KArbit',
       instances: 1,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
-        NODE_ENV: 'development',
-        KARBIT_MODE: 'paper',
+        NODE_ENV: 'production',
+        KARBIT_MODE: 'live',
         PORT: '8080',
       },
       env_live: {

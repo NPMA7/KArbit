@@ -29,6 +29,7 @@ type WebConfigUpdate struct {
 	MaxDailyLossUSDT     *float64 `json:"max_daily_loss_usdt,omitempty"`
 	BinanceAPIKey        *string  `json:"binance_api_key,omitempty"`
 	BinanceAPISecret     *string  `json:"binance_api_secret,omitempty"`
+	SecurityPIN          *string  `json:"security_pin,omitempty"`
 }
 
 // WebServer manages the HTTP and WebSocket endpoints for the browser dashboard.
@@ -275,6 +276,24 @@ func (ws *WebServer) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
+	}
+
+	// Verify Security PIN
+	expectedPIN := getSecurityPIN()
+	if expectedPIN != "" {
+		providedPIN := ""
+		if update.SecurityPIN != nil {
+			providedPIN = strings.TrimSpace(*update.SecurityPIN)
+		}
+		if providedPIN != expectedPIN {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Security PIN salah atau belum dimasukkan!",
+			})
+			return
+		}
 	}
 
 	if ws.onUpdate != nil {

@@ -214,41 +214,30 @@ function renderDashboard(d) {
     window.hasInitializedFormConfig = true;
   }
 
-  // Mode badge
-  const isLive = d.trading_mode === 'live';
-  currentMode = d.trading_mode || 'paper';
-  if (isLive) {
-    modeBadge.className = 'mode-pill live';
-    modeText.textContent = 'LIVE BINANCE';
-    kpiWalletTitle.textContent = 'BINANCE SPOT BALANCE';
-    kpiPnlSubtext.textContent = 'Live Net Profit';
-    binanceApiCard.style.display = 'block';
+  // Always Live Binance Mode
+  const isLive = true;
+  currentMode = 'live';
+  if (modeBadge) modeBadge.className = 'mode-pill live';
+  if (modeText) modeText.textContent = 'LIVE BINANCE SPOT';
+  if (kpiWalletTitle) kpiWalletTitle.textContent = 'BINANCE SPOT BALANCE';
+  if (kpiPnlSubtext) kpiPnlSubtext.textContent = 'Live Realized Net Profit';
+  if (binanceApiCard) binanceApiCard.style.display = 'block';
 
-    const curSpotBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 0;
-    if (liveUsdtBal) {
-      liveUsdtBal.textContent = `$${curSpotBal.toFixed(2)} USDT`;
-    }
-    if (liveBnbBal) {
-      const curBnb = (liveAccountData && liveAccountData.BNBBalance) ? liveAccountData.BNBBalance : 0;
-      liveBnbBal.textContent = `${curBnb.toFixed(4)} BNB`;
-    }
-    if (liveCanTrade) {
-      liveCanTrade.textContent = 'ENABLED (SPOT)';
-    }
-  } else {
-    modeBadge.className = 'mode-pill';
-    modeText.textContent = 'PAPER TRADING';
-    kpiWalletTitle.textContent = 'WALLET BALANCE (PAPER)';
-    kpiPnlSubtext.textContent = 'Simulated Net Profit';
-    binanceApiCard.style.display = 'none';
+  const curSpotBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 10.02;
+  if (liveUsdtBal) {
+    liveUsdtBal.textContent = `$${curSpotBal.toFixed(2)} USDT`;
+  }
+  if (liveBnbBal) {
+    const curBnb = (liveAccountData && liveAccountData.BNBBalance) ? liveAccountData.BNBBalance : 0;
+    liveBnbBal.textContent = `${curBnb.toFixed(4)} BNB`;
+  }
+  if (liveCanTrade) {
+    liveCanTrade.textContent = 'ENABLED (SPOT)';
   }
 
-  // Filter execution logs for the current active mode
+  // Filter execution logs for Live Binance trades only
   const allLogs = d.recent_execution_log || [];
-  const activeModeLogs = allLogs.filter((log) => {
-    const isLogLive = (log.mode || '').toLowerCase() === 'live';
-    return isLive ? isLogLive : !isLogLive;
-  });
+  const activeModeLogs = allLogs.filter((log) => (log.mode || '').toLowerCase() === 'live');
 
   // Mode-specific PnL & Trade stats
   let modePnL = 0;
@@ -274,12 +263,8 @@ function renderDashboard(d) {
   kpiPnlPct.className = `badge-pill ${pnl >= 0 ? 'bg-success-soft' : 'bg-danger-soft'}`;
 
   // Wallet
-  if (isLive) {
-    const liveBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 0;
-    kpiWalletVal.textContent = `$${liveBal.toFixed(2)}`;
-  } else {
-    kpiWalletVal.textContent = `$${(d.wallet_balance || 10).toFixed(2)}`;
-  }
+  const liveBal = (d.live_account_balance && d.live_account_balance > 0) ? d.live_account_balance : ((liveAccountData && liveAccountData.USDTBalance) ? liveAccountData.USDTBalance : 10.02);
+  kpiWalletVal.textContent = `$${liveBal.toFixed(2)}`;
   kpiCapitalVal.textContent = `$${(d.trade_amount_usdt || 10).toFixed(2)}`;
 
   // Throughput
@@ -688,9 +673,132 @@ window.verifyAndActivateLive = async function() {
 };
 
 /**
+ * Security PIN Verification Modal Handlers
+ */
+let pendingConfigPayload = null;
+
+window.openSecurityPinModal = function(payload) {
+  pendingConfigPayload = payload;
+  const modal = document.getElementById('modal-security-pin');
+  const inputPin = document.getElementById('input-security-pin');
+  const modalAlert = document.getElementById('modal-pin-alert');
+  if (modalAlert) {
+    modalAlert.style.display = 'none';
+    modalAlert.textContent = '';
+  }
+  if (inputPin) {
+    inputPin.value = '';
+    setTimeout(() => inputPin.focus(), 150);
+  }
+  if (modal) modal.style.display = 'flex';
+};
+
+window.closeSecurityPinModal = function() {
+  const modal = document.getElementById('modal-security-pin');
+  if (modal) modal.style.display = 'none';
+  pendingConfigPayload = null;
+};
+
+window.togglePinVisibility = function() {
+  const input = document.getElementById('input-security-pin');
+  const btn = document.getElementById('btn-toggle-security-pin');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (btn) btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+  } else {
+    input.type = 'password';
+    if (btn) btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+  }
+};
+
+window.submitPinAndApply = async function() {
+  const inputPin = document.getElementById('input-security-pin');
+  const modalAlert = document.getElementById('modal-pin-alert');
+  const btnConfirm = document.getElementById('btn-confirm-apply-pin');
+  const pinTxt = document.getElementById('pin-confirm-text');
+
+  const pin = inputPin ? inputPin.value.trim() : '';
+  if (!pin) {
+    if (modalAlert) {
+      modalAlert.className = 'modal-auth-alert alert-error';
+      modalAlert.innerHTML = '⚠️ Masukkan Security PIN terlebih dahulu!';
+      modalAlert.style.display = 'block';
+    }
+    if (inputPin) inputPin.focus();
+    return;
+  }
+
+  if (!pendingConfigPayload) {
+    window.closeSecurityPinModal();
+    return;
+  }
+
+  const finalPayload = {
+    ...pendingConfigPayload,
+    security_pin: pin,
+  };
+
+  if (btnConfirm) btnConfirm.disabled = true;
+  if (pinTxt) pinTxt.textContent = 'Memverifikasi PIN...';
+
+  try {
+    const resp = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalPayload),
+    });
+
+    const res = await resp.json();
+    if (res.success) {
+      if (modalAlert) {
+        modalAlert.className = 'modal-auth-alert alert-success';
+        modalAlert.innerHTML = '✅ PIN Valid! Parameter berhasil diperbarui.';
+        modalAlert.style.display = 'block';
+      }
+      showToast('✅ Parameter KArbit berhasil diperbarui dan disimpan!', 'success');
+      setTimeout(() => {
+        window.closeSecurityPinModal();
+      }, 500);
+    } else {
+      if (modalAlert) {
+        modalAlert.className = 'modal-auth-alert alert-error';
+        modalAlert.innerHTML = `❌ ${res.error || 'Security PIN salah atau tidak valid!'}`;
+        modalAlert.style.display = 'block';
+      }
+      showToast(`❌ Gagal: ${res.error || 'Security PIN salah'}`, 'error');
+      if (inputPin) {
+        inputPin.value = '';
+        inputPin.focus();
+      }
+    }
+  } catch (err) {
+    if (modalAlert) {
+      modalAlert.className = 'modal-auth-alert alert-error';
+      modalAlert.innerHTML = `❌ Terjadi kesalahan jaringan: ${err.message}`;
+      modalAlert.style.display = 'block';
+    }
+  } finally {
+    if (btnConfirm) btnConfirm.disabled = false;
+    if (pinTxt) pinTxt.textContent = 'Konfirmasi & Terapkan';
+  }
+};
+
+/**
  * Event Listeners & UI Controls
  */
 function setupEventListeners() {
+  // Enter key support inside PIN input
+  const inputPinEl = document.getElementById('input-security-pin');
+  if (inputPinEl) {
+    inputPinEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        window.submitPinAndApply();
+      }
+    });
+  }
+
   // Reconnect Button
   if (btnReconnect) {
     btnReconnect.addEventListener('click', () => {
@@ -720,13 +828,13 @@ function setupEventListeners() {
   if (btnModalVerify) btnModalVerify.addEventListener('click', window.verifyAndActivateLive);
   if (btnReconfigureKeys) btnReconfigureKeys.addEventListener('click', window.openLiveAuthModal);
 
-  // Parameters Form Submit
+  // Parameters Form Submit -> Triggers Security PIN Modal
   if (formConfig) {
-    formConfig.addEventListener('submit', async (e) => {
+    formConfig.addEventListener('submit', (e) => {
       e.preventDefault();
 
       const payload = {
-        trading_mode: currentMode,
+        trading_mode: 'live',
         trade_amount_usdt: parseFloat(inputCapital.value),
         min_profit_percent: parseFloat(inputMinProfit.value),
         fee_rate: parseFloat(inputFeeRate.value),
@@ -738,12 +846,7 @@ function setupEventListeners() {
         max_daily_loss_usdt: inputMaxDailyLoss ? parseFloat(inputMaxDailyLoss.value) : 50.0,
       };
 
-      if (inputApiKey && inputApiSecret && inputApiKey.value && inputApiSecret.value) {
-        payload.binance_api_key = inputApiKey.value.trim();
-        payload.binance_api_secret = inputApiSecret.value.trim();
-      }
-
-      await updateRuntimeConfig(payload);
+      window.openSecurityPinModal(payload);
     });
   }
 

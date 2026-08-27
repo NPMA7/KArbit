@@ -114,6 +114,38 @@ func main() {
 		liveBalanceMu      sync.RWMutex
 	)
 
+	// Fetch initial Binance account balance on startup
+	if binanceClient.HasCredentials() {
+		acc, err := binanceClient.GetAccountInfo(ctx)
+		if err == nil && acc != nil {
+			liveBalanceMu.Lock()
+			liveAccountBalance = acc.USDTBalance
+			liveBalanceMu.Unlock()
+			fmt.Printf("[KArbit] Initial Live Spot USDT Balance: $%.2f | BNB: %.4f\n", acc.USDTBalance, acc.BNBBalance)
+		}
+	}
+
+	// Periodic Binance balance refresh routine (every 10 seconds)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if binanceClient.HasCredentials() {
+					acc, err := binanceClient.GetAccountInfo(ctx)
+					if err == nil && acc != nil {
+						liveBalanceMu.Lock()
+						liveAccountBalance = acc.USDTBalance
+						liveBalanceMu.Unlock()
+					}
+				}
+			}
+		}
+	}()
+
 	// Throughput calculation routine
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)

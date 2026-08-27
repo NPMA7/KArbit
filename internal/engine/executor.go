@@ -206,13 +206,19 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 
 	// Live 3-leg sequential execution with IOC (Immediate-or-Cancel)
 	// Leg 1
+	side1 := exchange.SideBuy
+	if opp.Triangle.Leg1.Action == "SELL" {
+		side1 = exchange.SideSell
+	}
 	req1 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg1.Symbol,
-		Side:        exchange.SideBuy,
+		Side:        side1,
 		Type:        exchange.TypeLimit,
 		TimeInForce: exchange.TimeInForceIOC,
 		Quantity:    opp.Leg1Qty,
 		Price:       opp.Leg1Price,
+		StepSize:    opp.Triangle.Leg1.StepSize,
+		TickSize:    opp.Triangle.Leg1.TickSize,
 	}
 	resp1, err1 := e.client.CreateOrder(ctx, req1)
 	if err1 != nil {
@@ -239,6 +245,8 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		TimeInForce: exchange.TimeInForceIOC,
 		Quantity:    opp.Leg2Qty,
 		Price:       opp.Leg2Price,
+		StepSize:    opp.Triangle.Leg2.StepSize,
+		TickSize:    opp.Triangle.Leg2.TickSize,
 	}
 	resp2, err2 := e.client.CreateOrder(ctx, req2)
 	if err2 != nil {
@@ -254,13 +262,19 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 
 	// Leg 3
+	side3 := exchange.SideSell
+	if opp.Triangle.Leg3.Action == "BUY" {
+		side3 = exchange.SideBuy
+	}
 	req3 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg3.Symbol,
-		Side:        exchange.SideSell,
+		Side:        side3,
 		Type:        exchange.TypeLimit,
 		TimeInForce: exchange.TimeInForceIOC,
 		Quantity:    opp.Leg3Qty,
 		Price:       opp.Leg3Price,
+		StepSize:    opp.Triangle.Leg3.StepSize,
+		TickSize:    opp.Triangle.Leg3.TickSize,
 	}
 	resp3, err3 := e.client.CreateOrder(ctx, req3)
 	if err3 != nil {

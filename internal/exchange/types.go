@@ -178,7 +178,46 @@ type OrderRequest struct {
 	TimeInForce TimeInForce `json:"timeInForce,omitempty"`
 	Quantity    float64     `json:"quantity"`
 	Price       float64     `json:"price,omitempty"`
+	StepSize    float64     `json:"stepSize,omitempty"`
+	TickSize    float64     `json:"tickSize,omitempty"`
 	Timestamp   int64       `json:"timestamp"`
+}
+
+// PrecisionFromStep computes the number of decimal digits from step size / tick size.
+func PrecisionFromStep(step float64) int {
+	if step <= 0 {
+		return 8
+	}
+	s := strconv.FormatFloat(step, 'f', -1, 64)
+	for i, c := range s {
+		if c == '.' {
+			return len(s) - i - 1
+		}
+	}
+	return 0
+}
+
+// FormatQuantity formats a quantity truncated according to stepSize without float rounding overflow.
+func FormatQuantity(qty, stepSize float64) string {
+	if stepSize <= 0 {
+		return strconv.FormatFloat(qty, 'f', 8, 64)
+	}
+	prec := PrecisionFromStep(stepSize)
+	factor := 1.0
+	for i := 0; i < prec; i++ {
+		factor *= 10.0
+	}
+	truncated := float64(int64(qty*factor+1e-9)) / factor
+	return strconv.FormatFloat(truncated, 'f', prec, 64)
+}
+
+// FormatPrice formats a price according to tickSize without float rounding overflow.
+func FormatPrice(price, tickSize float64) string {
+	if tickSize <= 0 {
+		return strconv.FormatFloat(price, 'f', 8, 64)
+	}
+	prec := PrecisionFromStep(tickSize)
+	return strconv.FormatFloat(price, 'f', prec, 64)
 }
 
 // OrderResponse represents response returned after order execution.

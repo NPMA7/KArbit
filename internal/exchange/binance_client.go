@@ -194,9 +194,17 @@ func (c *BinanceClient) CreateOrder(ctx context.Context, ord OrderRequest) (*Ord
 	params.Set("symbol", ord.Symbol)
 	params.Set("side", string(ord.Side))
 	params.Set("type", string(ord.Type))
-	params.Set("quantity", strconv.FormatFloat(ord.Quantity, 'f', -1, 64))
+	if ord.StepSize > 0 {
+		params.Set("quantity", FormatQuantity(ord.Quantity, ord.StepSize))
+	} else {
+		params.Set("quantity", strconv.FormatFloat(ord.Quantity, 'f', -1, 64))
+	}
 	if ord.Price > 0 {
-		params.Set("price", strconv.FormatFloat(ord.Price, 'f', -1, 64))
+		if ord.TickSize > 0 {
+			params.Set("price", FormatPrice(ord.Price, ord.TickSize))
+		} else {
+			params.Set("price", strconv.FormatFloat(ord.Price, 'f', -1, 64))
+		}
 	}
 	if ord.TimeInForce != "" {
 		params.Set("timeInForce", string(ord.TimeInForce))
