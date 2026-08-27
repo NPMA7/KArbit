@@ -173,7 +173,7 @@ func main() {
 	}()
 
 	// 7. Multi-Worker Arb Evaluation Pool
-	evalTaskChan := make(chan *graph.Triangle, 200000)
+	evalTaskChan := make(chan *graph.Triangle, 300000)
 	var workerWg sync.WaitGroup
 
 	for i := 0; i < cfg.WorkerCount; i++ {

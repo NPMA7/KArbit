@@ -481,7 +481,6 @@ function renderRadarTable(d) {
             ${routeChainHtml}
           </div>
         </td>
-        <td class="font-mono ${grossColorClass}">${grossPct >= 0 ? '+' : ''}${grossPct.toFixed(3)}%</td>
         <td class="font-mono ${netColorClass}">${netPct >= 0 ? '+' : ''}${netPct.toFixed(3)}%</td>
         <td class="font-mono ${profitColorClass}">${formattedProfit}</td>
         <td class="font-mono text-muted">${item.latency_ms || 0} ms</td>
@@ -531,7 +530,7 @@ function renderExecutionsTable(logs) {
         <td class="font-mono ${isWin ? 'text-emerald' : 'text-danger'}">+$${(opp.net_profit_usdt || 0).toFixed(4)}</td>
         <td class="font-mono text-muted">${log.execution_time_ns ? (log.execution_time_ns / 1000000).toFixed(1) : '<1'} ms</td>
         <td>
-          <span class="${modeBadgeClass}">${(log.mode || 'paper').toUpperCase()}</span>
+          <span class="${modeBadgeClass}">${(log.mode).toUpperCase()}</span>
           ${log.is_success ? '<span class="text-emerald">✔ FILLED</span>' : `<span class="text-danger">✖ ${log.error_message || 'FAILED'}</span>`}
         </td>
       </tr>
@@ -626,12 +625,6 @@ function renderPairStats(logs) {
   }
 }
 
-// Global Window Helpers for Mode, Modal & Tabs
-window.setModePaper = function() {
-  setModeUI('paper');
-  updateRuntimeConfig({ trading_mode: 'paper' });
-  showToast('Mode simulasi (Paper Trading) aktif', 'info');
-};
 
 window.openLiveAuthModal = function() {
   if (liveAccountData && liveAccountData.canTrade) {
@@ -650,13 +643,6 @@ window.openLiveAuthModal = function() {
   }
 };
 
-window.closeLiveAuthModal = function() {
-  const modal = document.getElementById('modal-live-auth');
-  if (modal) modal.style.display = 'none';
-  if (!liveAccountData || !liveAccountData.canTrade) {
-    setModeUI('paper');
-  }
-};
 
 window.verifyAndActivateLive = async function() {
   const modalVerifyBtn = document.getElementById('btn-modal-verify');

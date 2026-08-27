@@ -211,11 +211,8 @@ func BuildMultiGraphIndex(symbols []exchange.ParsedSymbol, baseCurrencies []stri
 		return quads[i].score > quads[j].score
 	})
 
-	// Select top 100,000 4-hop routes
-	target4Hop := 100000
-	if len(quads) < target4Hop {
-		target4Hop = len(quads)
-	}
+	// Select 100% Full 4-hop routes (165,388 paths)
+	target4Hop := len(quads)
 
 	quadCount := 0
 	for i := 0; i < len(quads) && quadCount < target4Hop; i++ {
