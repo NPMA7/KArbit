@@ -850,33 +850,6 @@ function setupEventListeners() {
     });
   }
 
-  // Test Mock Execution Button
-  if (btnTestTrade) {
-    btnTestTrade.addEventListener('click', async () => {
-      btnTestTrade.disabled = true;
-      btnTestTrade.textContent = '⏳ Executing...';
-      try {
-        const resp = await fetch('/api/test-execution', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const res = await resp.json();
-        if (res.success && res.result) {
-          const r = res.result;
-          const opp = r.opportunity || {};
-          const t = opp.triangle || {};
-          showToast(`✅ Simulasi Eksekusi Berhasil! Rute: ${t.id || 'USDT->BTC->ETH->USDT'} | Profit: +$${(r.actual_net_profit_usdt || 0).toFixed(4)}`, 'success');
-        } else {
-          showToast(`⚠️ Eksekusi Ditolak: ${res.error || 'Unknown'}`, 'warning');
-        }
-      } catch (err) {
-        showToast(`❌ Error: ${err.message}`, 'error');
-      } finally {
-        btnTestTrade.disabled = false;
-        btnTestTrade.textContent = '🧪 Test Mock Execution';
-      }
-    });
-  }
 
   // Clear Log Table Button
   if (btnClearTable) {

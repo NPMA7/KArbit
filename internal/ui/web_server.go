@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,7 +44,6 @@ type WebServer struct {
 	dataMu          sync.RWMutex
 	onUpdate        func(update WebConfigUpdate) error
 	onTestAuth      func(apiKey, apiSecret string) (interface{}, error)
-	onTestExecution func() (interface{}, error)
 	onClearLog      func() error
 	server          *http.Server
 }
@@ -73,11 +73,6 @@ func NewWebServer(port int, webDir string, onUpdate func(update WebConfigUpdate)
 		onUpdate:   onUpdate,
 		onTestAuth: onTestAuth,
 	}
-}
-
-// SetTestExecutionHandler registers a callback for simulating test executions.
-func (ws *WebServer) SetTestExecutionHandler(fn func() (interface{}, error)) {
-	ws.onTestExecution = fn
 }
 
 // SetClearLogHandler registers a callback for clearing trade history logs.
@@ -115,7 +110,6 @@ func (ws *WebServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/binance-auth", ws.handleBinanceAuth)
 	mux.HandleFunc("/api/security/verify-pin", ws.handleVerifyPIN)
 	mux.HandleFunc("/api/security/change-pin", ws.handleChangePIN)
-	mux.HandleFunc("/api/test-execution", ws.handleTestExecution)
 	mux.HandleFunc("/api/clear-log", ws.handleClearLog)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", ws.port)
@@ -207,15 +201,101 @@ type BinanceAuthRequest struct {
 	SecurityPIN string `json:"security_pin"`
 }
 
+// RateLimiter protects sensitive endpoints from PIN brute-force attacks.
+type RateLimiter struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+	lockouts map[string]time.Time
+}
+
+var globalLimiter = &RateLimiter{
+	attempts: make(map[string][]time.Time),
+	lockouts: make(map[string]time.Time),
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("CF-Connecting-IP"); xff != "" {
+		return strings.TrimSpace(xff)
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func checkAndVerifyPIN(r *http.Request, providedPIN string) error {
+	ip := getClientIP(r)
+	now := time.Now()
+
+	globalLimiter.mu.Lock()
+	defer globalLimiter.mu.Unlock()
+
+	// Check if IP is currently locked out
+	if unlockTime, locked := globalLimiter.lockouts[ip]; locked {
+		if now.Before(unlockTime) {
+			remaining := unlockTime.Sub(now).Round(time.Second)
+			return fmt.Errorf("Terlalu banyak percobaan PIN gagal. Akses IP diblokir sementara selama %v", remaining)
+		}
+		delete(globalLimiter.lockouts, ip)
+		delete(globalLimiter.attempts, ip)
+	}
+
+	expectedPIN := getSecurityPIN()
+	if expectedPIN == "" {
+		return nil
+	}
+
+	if strings.TrimSpace(providedPIN) == expectedPIN {
+		delete(globalLimiter.attempts, ip)
+		return nil
+	}
+
+	// Record failed attempt
+	cutoff := now.Add(-3 * time.Minute)
+	var recent []time.Time
+	for _, t := range globalLimiter.attempts[ip] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	recent = append(recent, now)
+	globalLimiter.attempts[ip] = recent
+
+	if len(recent) >= 5 {
+		globalLimiter.lockouts[ip] = now.Add(5 * time.Minute)
+		return fmt.Errorf("PIN salah 5 kali berturut-turut. Akses IP Anda dikunci selama 5 menit")
+	}
+
+	return fmt.Errorf("Security PIN salah atau belum dimasukkan! (Sisa percobaan: %d)", 5-len(recent))
+}
+
 func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req BinanceAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf(`{"error":"Invalid JSON: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	if err := checkAndVerifyPIN(r, req.SecurityPIN); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
 		return
 	}
 
@@ -233,7 +313,6 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if key == "" || secret == "" {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
@@ -245,7 +324,6 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 	if ws.onTestAuth != nil {
 		info, err := ws.onTestAuth(key, secret)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
@@ -254,7 +332,6 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"message": "Binance API Key verified successfully from .env!",
@@ -267,33 +344,29 @@ func (ws *WebServer) handleBinanceAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *WebServer) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
 	var update WebConfigUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf(`{"error":"Invalid JSON: %v"}`, err), http.StatusBadRequest)
 		return
 	}
 
-	// Verify Security PIN
-	expectedPIN := getSecurityPIN()
-	if expectedPIN != "" {
-		providedPIN := ""
-		if update.SecurityPIN != nil {
-			providedPIN = strings.TrimSpace(*update.SecurityPIN)
-		}
-		if providedPIN != expectedPIN {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"error":   "Security PIN salah atau belum dimasukkan!",
-			})
-			return
-		}
+	providedPIN := ""
+	if update.SecurityPIN != nil {
+		providedPIN = *update.SecurityPIN
+	}
+	if err := checkAndVerifyPIN(r, providedPIN); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
 	}
 
 	if ws.onUpdate != nil {
@@ -303,7 +376,6 @@ func (ws *WebServer) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Configuration updated successfully",
@@ -340,7 +412,7 @@ func (ws *WebServer) runBroadcastLoop(ctx context.Context) {
 			}
 			ws.clientsMu.RUnlock()
 
-			// Write to clients OUTSIDE the mutex to prevent any lock contention
+			// Write to clients OUTSIDE the mutex to prevent lock contention
 			for _, conn := range clientList {
 				conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 				if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
@@ -354,40 +426,27 @@ func (ws *WebServer) runBroadcastLoop(ctx context.Context) {
 	}
 }
 
-func (ws *WebServer) handleTestExecution(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	if ws.onTestExecution == nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Test execution handler not configured",
-		})
-		return
-	}
-	res, err := ws.onTestExecution()
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Mock test execution completed successfully",
-		"result":  res,
-	})
-}
-
 func (ws *WebServer) handleClearLog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+
+	var req struct {
+		SecurityPIN string `json:"security_pin"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if err := checkAndVerifyPIN(r, req.SecurityPIN); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
 	if ws.onClearLog != nil {
 		_ = ws.onClearLog()
 	}

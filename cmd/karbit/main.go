@@ -348,49 +348,6 @@ func main() {
 		},
 	)
 
-	webServer.SetTestExecutionHandler(func() (interface{}, error) {
-		var testOpp *engine.ArbitrageOpportunity
-
-		liveSpreadsMu.RLock()
-		for _, sp := range liveSpreadsMap {
-			testOpp = sp
-			break
-		}
-		liveSpreadsMu.RUnlock()
-
-		if testOpp == nil {
-			testOpp = &engine.ArbitrageOpportunity{
-				Triangle: &graph.Triangle{
-					ID:     "USDT->BTC->ETH->USDT",
-					AssetA: "BTC",
-					AssetB: "ETH",
-					Leg1:   graph.Leg{Symbol: "BTCUSDT", Action: "BUY"},
-					Leg2:   graph.Leg{Symbol: "ETHBTC", Action: "BUY"},
-					Leg3:   graph.Leg{Symbol: "ETHUSDT", Action: "SELL"},
-				},
-				Timestamp:          time.Now(),
-				StartAmountUSDT:    cfg.TradeAmountUSDT,
-				FinalAmountUSDT:    cfg.TradeAmountUSDT * 1.0025,
-				GrossProfitPercent: 0.40,
-				NetProfitPercent:   0.175,
-				NetProfitUSDT:      cfg.TradeAmountUSDT * 0.00175,
-				LatencyMs:          2,
-			}
-		} else {
-			cloned := *testOpp
-			cloned.Timestamp = time.Now()
-			cloned.GrossProfitPercent = 0.42
-			cloned.NetProfitPercent = 0.18
-			cloned.NetProfitUSDT = cfg.TradeAmountUSDT * (cloned.NetProfitPercent / 100)
-			cloned.FinalAmountUSDT = cfg.TradeAmountUSDT + cloned.NetProfitUSDT
-			cloned.LatencyMs = 2
-			testOpp = &cloned
-		}
-
-		res := executor.Execute(ctx, testOpp)
-		return res, nil
-	})
-
 	webServer.SetClearLogHandler(func() error {
 		executor.ClearLogs()
 		return nil

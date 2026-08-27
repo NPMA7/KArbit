@@ -15,6 +15,32 @@ type GraphIndex struct {
 	AllRequiredSymbols map[string]bool
 }
 
+var restrictedFiatAssets = map[string]bool{
+	"TRY":  true, // Turkish Lira (Region restricted on Binance)
+	"BRL":  true, // Brazilian Real (Region restricted)
+	"RUB":  true, // Russian Ruble (Region restricted)
+	"UAH":  true, // Ukrainian Hryvnia (Region restricted)
+	"NGN":  true, // Nigerian Naira (Region restricted)
+	"ZAR":  true, // South African Rand (Region restricted)
+	"ARS":  true, // Argentine Peso (Region restricted)
+	"COP":  true, // Colombian Peso (Region restricted)
+	"PLN":  true, // Polish Zloty (Region restricted)
+	"RON":  true, // Romanian Leu (Region restricted)
+	"CZK":  true, // Czech Koruna (Region restricted)
+	"HUF":  true, // Hungarian Forint (Region restricted)
+	"MXN":  true, // Mexican Peso (Region restricted)
+	"KZT":  true, // Kazakhstani Tenge (Region restricted)
+	"BIDR": true, // Indonesian Rupiah token (Restricted)
+	"IDRT": true, // Rupiah token (Restricted)
+	"GBP":  true, // British Pound (Restricted)
+	"AUD":  true, // Australian Dollar (Restricted)
+	"JPY":  true, // Japanese Yen (Restricted)
+}
+
+func isRestrictedFiat(asset string) bool {
+	return restrictedFiatAssets[asset]
+}
+
 // BuildGraphIndex finds all valid 3-leg triangular arbitrage cycles starting and ending at baseCurrency.
 func BuildGraphIndex(symbols []exchange.ParsedSymbol, baseCurrency string) *GraphIndex {
 	// 1. Build adjacency map: assetPairMap[fromAsset][toAsset] = ParsedSymbol
@@ -22,6 +48,9 @@ func BuildGraphIndex(symbols []exchange.ParsedSymbol, baseCurrency string) *Grap
 
 	for _, sym := range symbols {
 		if sym.BaseAsset == "" || sym.QuoteAsset == "" {
+			continue
+		}
+		if isRestrictedFiat(sym.BaseAsset) || isRestrictedFiat(sym.QuoteAsset) {
 			continue
 		}
 		if assetPairMap[sym.BaseAsset] == nil {
@@ -59,6 +88,9 @@ func BuildGraphIndex(symbols []exchange.ParsedSymbol, baseCurrency string) *Grap
 	sort.Strings(neighborKeys)
 
 	for _, assetA := range neighborKeys {
+		if isRestrictedFiat(assetA) {
+			continue
+		}
 		sym1 := baseNeighbors[assetA]
 		leg1, ok1 := BuildLeg(baseCurrency, assetA, sym1)
 		if !ok1 {
@@ -67,7 +99,7 @@ func BuildGraphIndex(symbols []exchange.ParsedSymbol, baseCurrency string) *Grap
 
 		aNeighbors := assetPairMap[assetA]
 		for assetB, sym2 := range aNeighbors {
-			if assetB == baseCurrency || assetB == assetA {
+			if assetB == baseCurrency || assetB == assetA || isRestrictedFiat(assetB) {
 				continue
 			}
 
