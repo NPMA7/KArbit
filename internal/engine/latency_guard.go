@@ -27,8 +27,8 @@ func (lg *LatencyGuard) SetMaxLatency(maxLatencyMs int64) {
 	lg.maxLatencyMs = maxLatencyMs
 }
 
-// AreTriangleQuotesFresh checks if all 3 quotes in a triangle are within the maximum latency threshold.
-func (lg *LatencyGuard) AreTriangleQuotesFresh(quotes [3]TickerState, nowMs int64) (bool, int64) {
+// AreTriangleQuotesFresh checks if all quotes in a triangle or quad are within the maximum latency threshold.
+func (lg *LatencyGuard) AreTriangleQuotesFresh(quotes []TickerState, nowMs int64) (bool, int64) {
 	if nowMs == 0 {
 		nowMs = time.Now().UnixMilli()
 	}

@@ -223,13 +223,19 @@ function renderDashboard(d) {
   if (kpiPnlSubtext) kpiPnlSubtext.textContent = 'Live Realized Net Profit';
   if (binanceApiCard) binanceApiCard.style.display = 'block';
 
-  const curSpotBal = d.live_account_balance || (liveAccountData ? liveAccountData.USDTBalance : 0) || 10.02;
+  const curUsdtBal = (d.live_account_balance !== undefined && d.live_account_balance !== null) ? d.live_account_balance : ((liveAccountData ? liveAccountData.USDTBalance : 0) || 0);
+  const curUsdcBal = (d.live_usdc_balance !== undefined && d.live_usdc_balance !== null) ? d.live_usdc_balance : ((liveAccountData ? liveAccountData.USDCBalance : 0) || 0);
+  const curBnbBal = (d.live_bnb_balance !== undefined && d.live_bnb_balance !== null) ? d.live_bnb_balance : ((liveAccountData ? liveAccountData.BNBBalance : 0) || 0);
+
   if (liveUsdtBal) {
-    liveUsdtBal.textContent = `$${curSpotBal.toFixed(2)} USDT`;
+    liveUsdtBal.textContent = `$${curUsdtBal.toFixed(2)} USDT`;
+  }
+  const liveUsdcBalEl = document.getElementById('live-usdc-bal');
+  if (liveUsdcBalEl) {
+    liveUsdcBalEl.textContent = `$${curUsdcBal.toFixed(2)} USDC`;
   }
   if (liveBnbBal) {
-    const curBnb = (liveAccountData && liveAccountData.BNBBalance) ? liveAccountData.BNBBalance : 0;
-    liveBnbBal.textContent = `${curBnb.toFixed(4)} BNB`;
+    liveBnbBal.textContent = `${curBnbBal.toFixed(4)} BNB`;
   }
   if (liveCanTrade) {
     liveCanTrade.textContent = 'ENABLED (SPOT)';
@@ -263,9 +269,9 @@ function renderDashboard(d) {
   kpiPnlPct.className = `badge-pill ${pnl >= 0 ? 'bg-success-soft' : 'bg-danger-soft'}`;
 
   // Wallet
-  const liveBal = (d.live_account_balance && d.live_account_balance > 0) ? d.live_account_balance : ((liveAccountData && liveAccountData.USDTBalance) ? liveAccountData.USDTBalance : 10.02);
-  kpiWalletVal.textContent = `$${liveBal.toFixed(2)}`;
-  kpiCapitalVal.textContent = `$${(d.trade_amount_usdt || 10).toFixed(2)}`;
+  const totalLiveBal = (curUsdtBal + curUsdcBal) > 0 ? (curUsdtBal + curUsdcBal) : 10.02;
+  kpiWalletVal.textContent = `$${totalLiveBal.toFixed(2)}`;
+  kpiCapitalVal.textContent = `$${(d.trade_amount_usdt || 10).toFixed(2)} / trade`;
 
   // Throughput
   kpiEvalsSec.innerHTML = `${(d.evaluations_per_sec || 0).toLocaleString()} <span class="val-unit">evals/s</span>`;
@@ -351,9 +357,16 @@ function renderRadarTable(d) {
   }
 
   // Count metrics for tabs
+  let count3Hop = 0;
+  let count4Hop = 0;
   let triggeredCount = 0;
   let monitoringCount = 0;
+
   for (const item of allMerged) {
+    const is4Hop = item.triangle && (item.triangle.hop_count === 4 || item.triangle.asset_c);
+    if (is4Hop) count4Hop++;
+    else count3Hop++;
+
     if (item.net_profit_percent >= minProfit) {
       triggeredCount++;
     } else {
@@ -361,13 +374,21 @@ function renderRadarTable(d) {
     }
   }
 
+  const tabCount3Hop = document.getElementById('tab-count-3hop');
+  const tabCount4Hop = document.getElementById('tab-count-4hop');
   if (tabCountAll) tabCountAll.textContent = allMerged.length;
+  if (tabCount3Hop) tabCount3Hop.textContent = count3Hop;
+  if (tabCount4Hop) tabCount4Hop.textContent = count4Hop;
   if (tabCountTriggered) tabCountTriggered.textContent = triggeredCount;
   if (tabCountMonitoring) tabCountMonitoring.textContent = monitoringCount;
 
   // Apply active tab filter
   let displayList = allMerged;
-  if (currentRadarFilter === 'triggered') {
+  if (currentRadarFilter === '3hop') {
+    displayList = allMerged.filter(item => !item.triangle || item.triangle.hop_count !== 4 && !item.triangle.asset_c);
+  } else if (currentRadarFilter === '4hop') {
+    displayList = allMerged.filter(item => item.triangle && (item.triangle.hop_count === 4 || item.triangle.asset_c));
+  } else if (currentRadarFilter === 'triggered') {
     displayList = allMerged.filter(item => item.net_profit_percent >= minProfit);
   } else if (currentRadarFilter === 'monitoring') {
     displayList = allMerged.filter(item => item.net_profit_percent < minProfit);
@@ -384,7 +405,7 @@ function renderRadarTable(d) {
               <span style="font-size: 1.3rem;">⚡</span>
               <div class="mt-1"><strong>Belum Ada Rute yang Menyentuh Trigger Profit (&ge; +${minProfit.toFixed(2)}%)</strong></div>
               <div class="mt-1 text-muted" style="font-size: 0.74rem;">
-                Bot sedang memindai ${allMerged.length} jalur segitiga secara aktif pada kecepatan ${d.evaluations_per_sec ? d.evaluations_per_sec.toLocaleString() : '15,000+'} evals/detik.
+                Bot sedang memindai ${allMerged.length} jalur (3-Hop & 4-Hop) secara aktif pada kecepatan ${d.evaluations_per_sec ? d.evaluations_per_sec.toLocaleString() : '50,000+'} evals/detik.
               </div>
             </div>
           </td>
@@ -403,37 +424,66 @@ function renderRadarTable(d) {
   }
 
   let html = '';
-  displayList.slice(0, 50).forEach((item) => {
+  const radarLimit = (window.latestDashboardData && window.latestDashboardData.radar_display_limit) ? window.latestDashboardData.radar_display_limit : 999;
+  displayList.slice(0, radarLimit).forEach((item) => {
     if (!item || !item.triangle) return;
 
     const t = item.triangle;
+    const is4Hop = t.hop_count === 4 || !!t.asset_c;
     const isTriggered = item.net_profit_percent >= minProfit;
     const netPct = item.net_profit_percent || 0;
     const grossPct = item.gross_profit_percent || 0;
     const profitUSDT = item.net_profit_usdt || 0;
-    const netColorClass = netPct > 0 ? (isTriggered ? 'text-emerald font-weight-700' : 'text-cyan') : 'text-muted';
+    const baseAsset = t.base_asset || 'USDT';
+    const baseTagClass = baseAsset === 'USDC' ? 'tag-usdc' : 'tag-usdt';
 
-    const statusBadge = isTriggered
-      ? `<span class="status-badge-triggered">⚡ EXECUTION TRIGGER</span>`
-      : `<span class="status-badge-monitoring">MONITORING</span>`;
+    const grossColorClass = grossPct > 0 ? 'text-emerald' : (grossPct < 0 ? 'text-danger' : 'text-secondary');
+    const netColorClass = netPct > 0 ? 'text-emerald font-weight-700' : (netPct < 0 ? 'text-danger' : 'text-muted');
+    const profitColorClass = profitUSDT > 0 ? 'text-emerald font-weight-600' : (profitUSDT < 0 ? 'text-danger' : 'text-muted');
+    const formattedProfit = profitUSDT >= 0 ? `+$${profitUSDT.toFixed(4)}` : `-$${Math.abs(profitUSDT).toFixed(4)}`;
+
+
+    const hopBadge = is4Hop
+      ? `<span class="badge-hop badge-hop-4" title="4-Hop Quadrilateral Route">🔷</span>`
+      : `<span class="badge-hop badge-hop-3" title="3-Hop Triangular Route">🔺</span>`;
+
+    let routeChainHtml = '';
+    if (is4Hop) {
+      routeChainHtml = `
+        ${hopBadge}
+        <span class="badge-tag ${baseTagClass}">${baseAsset}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag tag-asset">${t.asset_a}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag tag-asset">${t.asset_b}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag tag-asset">${t.asset_c}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag ${baseTagClass}">${baseAsset}</span>
+      `;
+    } else {
+      routeChainHtml = `
+        ${hopBadge}
+        <span class="badge-tag ${baseTagClass}">${baseAsset}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag tag-asset">${t.asset_a}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag tag-asset">${t.asset_b}</span>
+        <span class="route-arrow">&rarr;</span>
+        <span class="badge-tag ${baseTagClass}">${baseAsset}</span>
+      `;
+    }
 
     html += `
       <tr class="${isTriggered ? 'row-highlight' : ''}">
         <td>
           <div class="route-cell">
-            <span class="badge-tag">USDT</span>
-            <span class="route-arrow">&rarr;</span>
-            <span class="badge-tag tag-asset">${t.asset_a}</span>
-            <span class="route-arrow">&rarr;</span>
-            <span class="badge-tag tag-asset">${t.asset_b}</span>
-            <span class="route-arrow">&rarr;</span>
-            <span class="badge-tag">USDT</span>
+            ${routeChainHtml}
           </div>
         </td>
-        <td class="font-mono text-secondary">${grossPct >= 0 ? '+' : ''}${grossPct.toFixed(3)}%</td>
+        <td class="font-mono ${grossColorClass}">${grossPct >= 0 ? '+' : ''}${grossPct.toFixed(3)}%</td>
         <td class="font-mono ${netColorClass}">${netPct >= 0 ? '+' : ''}${netPct.toFixed(3)}%</td>
-        <td class="font-mono ${profitUSDT >= 0 ? 'text-emerald' : 'text-danger'}">${profitUSDT >= 0 ? '+' : ''}$${profitUSDT.toFixed(4)}</td>
-        <td>${statusBadge}</td>
+        <td class="font-mono ${profitColorClass}">${formattedProfit}</td>
         <td class="font-mono text-muted">${item.latency_ms || 0} ms</td>
       </tr>
     `;
@@ -837,11 +887,11 @@ function setupEventListeners() {
         trading_mode: 'live',
         trade_amount_usdt: parseFloat(inputCapital.value),
         min_profit_percent: parseFloat(inputMinProfit.value),
-        fee_rate: parseFloat(inputFeeRate.value),
-        use_bnb_discount: inputBnbDiscount ? inputBnbDiscount.checked : true,
+        fee_rate: 0.00075,
+        use_bnb_discount: true,
         max_latency_ms: parseInt(inputMaxLatency.value, 10),
-        max_tracked_triangles: inputTrackedTriangles ? parseInt(inputTrackedTriangles.value, 10) : 350,
-        radar_display_limit: inputRadarLimit ? parseInt(inputRadarLimit.value, 10) : 50,
+        max_tracked_triangles: 0,
+        radar_display_limit: inputRadarLimit ? Math.min(999, Math.max(1, parseInt(inputRadarLimit.value, 10) || 100)) : 100,
         max_slippage_tolerance: inputMaxSlippage ? (parseFloat(inputMaxSlippage.value) / 100) : 0.001,
         max_daily_loss_usdt: inputMaxDailyLoss ? parseFloat(inputMaxDailyLoss.value) : 50.0,
       };
@@ -887,6 +937,10 @@ function setupEventListeners() {
   };
 
   if (tabRadarAll) tabRadarAll.addEventListener('click', () => window.setRadarFilterTab('all'));
+  const tabRadar3Hop = document.getElementById('tab-radar-3hop');
+  const tabRadar4Hop = document.getElementById('tab-radar-4hop');
+  if (tabRadar3Hop) tabRadar3Hop.addEventListener('click', () => window.setRadarFilterTab('3hop'));
+  if (tabRadar4Hop) tabRadar4Hop.addEventListener('click', () => window.setRadarFilterTab('4hop'));
   if (tabRadarTriggered) tabRadarTriggered.addEventListener('click', () => window.setRadarFilterTab('triggered'));
   if (tabRadarMonitoring) tabRadarMonitoring.addEventListener('click', () => window.setRadarFilterTab('monitoring'));
 }
@@ -900,6 +954,21 @@ function toggleInputVisibility(inputEl, btnEl) {
     btnEl.textContent = '👁';
   }
 }
+
+window.setArchView = function(viewMode) {
+  const row3Hop = document.getElementById('arch-row-3hop');
+  const row4Hop = document.getElementById('arch-row-4hop');
+  const btnBoth = document.getElementById('btn-arch-both');
+  const btn3Hop = document.getElementById('btn-arch-3hop');
+  const btn4Hop = document.getElementById('btn-arch-4hop');
+
+  if (btnBoth) btnBoth.classList.toggle('active', viewMode === 'both');
+  if (btn3Hop) btn3Hop.classList.toggle('active', viewMode === '3hop');
+  if (btn4Hop) btn4Hop.classList.toggle('active', viewMode === '4hop');
+
+  if (row3Hop) row3Hop.style.display = (viewMode === 'both' || viewMode === '3hop') ? 'flex' : 'none';
+  if (row4Hop) row4Hop.style.display = (viewMode === 'both' || viewMode === '4hop') ? 'flex' : 'none';
+};
 
 function setModeUI(mode) {
   currentMode = mode;

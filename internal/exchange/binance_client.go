@@ -272,6 +272,7 @@ type AccountInfo struct {
 	AccountType  string           `json:"accountType"`
 	Balances     []AccountBalance `json:"balances"`
 	USDTBalance  float64          `json:"-"`
+	USDCBalance  float64          `json:"-"`
 	BNBBalance   float64          `json:"-"`
 }
 
@@ -319,6 +320,8 @@ func (c *BinanceClient) GetAccountInfo(ctx context.Context) (*AccountInfo, error
 	for _, b := range info.Balances {
 		if b.Asset == "USDT" {
 			info.USDTBalance, _ = strconv.ParseFloat(b.Free, 64)
+		} else if b.Asset == "USDC" {
+			info.USDCBalance, _ = strconv.ParseFloat(b.Free, 64)
 		} else if b.Asset == "BNB" {
 			info.BNBBalance, _ = strconv.ParseFloat(b.Free, 64)
 		}

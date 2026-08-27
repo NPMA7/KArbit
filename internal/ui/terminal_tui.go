@@ -45,6 +45,8 @@ type DashboardData struct {
 	EvaluationsPerSec  uint64                          `json:"evaluations_per_sec"`
 	WalletBalance      float64                         `json:"wallet_balance"`
 	LiveAccountBalance float64                         `json:"live_account_balance"`
+	LiveUSDCBalance    float64                         `json:"live_usdc_balance"`
+	LiveBNBBalance     float64                         `json:"live_bnb_balance"`
 	HasLiveAPIKeys     bool                            `json:"has_live_api_keys"`
 	TotalTrades        uint64                          `json:"total_trades"`
 	ProfitableTrades   uint64                          `json:"profitable_trades"`

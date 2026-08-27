@@ -55,16 +55,16 @@ func (pb *PriceBook) Get(symbol string) (TickerState, bool) {
 	return state, exists
 }
 
-// GetTriangleSnapshot atomically reads quotes for all 3 legs of a triangle in a single read-lock.
-func (pb *PriceBook) GetTriangleSnapshot(symbols [3]string) ([3]TickerState, bool) {
+// GetPathSnapshot atomically reads quotes for all symbols in a path (3-hop or 4-hop) in a single read-lock.
+func (pb *PriceBook) GetPathSnapshot(symbols []string) ([]TickerState, bool) {
 	pb.mu.RLock()
 	defer pb.mu.RUnlock()
 
-	var states [3]TickerState
+	states := make([]TickerState, len(symbols))
 	for i, sym := range symbols {
 		s, ok := pb.quotes[sym]
 		if !ok || s.BestBidPrice <= 0 || s.BestAskPrice <= 0 {
-			return states, false
+			return nil, false
 		}
 		states[i] = s
 	}

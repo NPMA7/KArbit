@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -56,25 +58,28 @@ func main() {
 	fmt.Printf("[KArbit] Successfully parsed %d active spot trading pairs from Binance.\n", len(symbols))
 
 	// 4. Build Triangular Cycle Graph Index
-	fmt.Printf("[KArbit] Discovering 3-leg triangular paths for base asset '%s'... ", cfg.BaseCurrency)
-	graphIndex := graph.BuildGraphIndex(symbols, cfg.BaseCurrency)
+	baseCurrencies := cfg.GetBaseCurrencies()
+	fmt.Printf("[KArbit] Discovering 3-leg triangular paths for multi-base assets %v... ", baseCurrencies)
+	graphIndex := graph.BuildMultiGraphIndex(symbols, baseCurrencies)
 	fmt.Printf("Found %d valid triangles across %d symbols.\n",
 		len(graphIndex.Triangles), graphIndex.UniqueSymbolsCount)
 
 	if len(graphIndex.Triangles) == 0 {
-		fmt.Printf("\033[31m[Error]\033[0m No triangular cycles found for base currency %s\n", cfg.BaseCurrency)
+		fmt.Printf("\033[31m[Error]\033[0m No triangular cycles found for base currencies %v\n", baseCurrencies)
 		os.Exit(1)
 	}
 
-	if cfg.MaxTrackedTriangles <= 0 {
-		cfg.MaxTrackedTriangles = 350
-	}
 	if cfg.RadarDisplayLimit <= 0 {
 		cfg.RadarDisplayLimit = 50
 	}
 
-	// Filter down to the top configured most liquid complete triangles
-	activeGraph := graphIndex.GetActiveSubset(cfg.MaxTrackedTriangles)
+	// Activate 100% of all discovered triangular paths (no artificial capping unless explicitly configured lower)
+	activeGraph := graphIndex
+	if cfg.MaxTrackedTriangles > 0 && cfg.MaxTrackedTriangles < len(graphIndex.Triangles) {
+		activeGraph = graphIndex.GetActiveSubset(cfg.MaxTrackedTriangles)
+	}
+	fmt.Printf("[KArbit] 100%% Active Triangular Scanner Activated: %d Triangles across %d Symbols!\n",
+		len(activeGraph.Triangles), activeGraph.UniqueSymbolsCount)
 
 	// 5. Initialize Engine Components
 	priceBook := engine.NewPriceBook()
@@ -111,6 +116,8 @@ func main() {
 		liveSpreadsMap     = make(map[string]*engine.ArbitrageOpportunity)
 		liveSpreadsMu      sync.RWMutex
 		liveAccountBalance float64
+		liveUSDCBalance    float64
+		liveBNBBalance     float64
 		liveBalanceMu      sync.RWMutex
 	)
 
@@ -120,8 +127,10 @@ func main() {
 		if err == nil && acc != nil {
 			liveBalanceMu.Lock()
 			liveAccountBalance = acc.USDTBalance
+			liveUSDCBalance = acc.USDCBalance
+			liveBNBBalance = acc.BNBBalance
 			liveBalanceMu.Unlock()
-			fmt.Printf("[KArbit] Initial Live Spot USDT Balance: $%.2f | BNB: %.4f\n", acc.USDTBalance, acc.BNBBalance)
+			fmt.Printf("[KArbit] Initial Live Spot USDT: $%.2f | USDC: $%.2f | BNB: %.4f\n", acc.USDTBalance, acc.USDCBalance, acc.BNBBalance)
 		}
 	}
 
@@ -139,6 +148,8 @@ func main() {
 					if err == nil && acc != nil {
 						liveBalanceMu.Lock()
 						liveAccountBalance = acc.USDTBalance
+						liveUSDCBalance = acc.USDCBalance
+						liveBNBBalance = acc.BNBBalance
 						liveBalanceMu.Unlock()
 					}
 				}
@@ -162,7 +173,7 @@ func main() {
 	}()
 
 	// 7. Multi-Worker Arb Evaluation Pool
-	evalTaskChan := make(chan *graph.Triangle, 50000)
+	evalTaskChan := make(chan *graph.Triangle, 200000)
 	var workerWg sync.WaitGroup
 
 	for i := 0; i < cfg.WorkerCount; i++ {
@@ -181,8 +192,8 @@ func main() {
 					atomic.AddUint64(&totalEvaluations, 1)
 					atomic.AddUint64(&evalsInSec, 1)
 
-					// Atomic 3-leg snapshot
-					quotes, valid := priceBook.GetTriangleSnapshot(tri.Symbols)
+					// Atomic multi-leg snapshot
+					quotes, valid := priceBook.GetPathSnapshot(tri.Symbols)
 					if !valid {
 						continue
 					}
@@ -263,7 +274,7 @@ func main() {
 			case <-sweepTicker.C:
 				nowMs := time.Now().UnixMilli()
 				for _, tri := range activeGraph.Triangles {
-					quotes, valid := priceBook.GetTriangleSnapshot(tri.Symbols)
+					quotes, valid := priceBook.GetPathSnapshot(tri.Symbols)
 					if !valid {
 						continue
 					}
@@ -398,17 +409,14 @@ func main() {
 				}
 				liveSpreadsMu.RUnlock()
 
-				// Sort top spreads descending by NetProfitPercent
-				for i := 0; i < len(allSpreads); i++ {
-					for j := i + 1; j < len(allSpreads); j++ {
-						if allSpreads[j].NetProfitPercent > allSpreads[i].NetProfitPercent {
-							allSpreads[i], allSpreads[j] = allSpreads[j], allSpreads[i]
-						}
-					}
-				}
+				// Sort ALL active live spreads purely by NetProfitPercent descending (Real-Time Dynamic Profit Ranking)
+				sort.Slice(allSpreads, func(i, j int) bool {
+					return allSpreads[i].NetProfitPercent > allSpreads[j].NetProfitPercent
+				})
+
 				displayLimit := cfg.RadarDisplayLimit
 				if displayLimit <= 0 {
-					displayLimit = 50
+					displayLimit = 100
 				}
 				if len(allSpreads) > displayLimit {
 					allSpreads = allSpreads[:displayLimit]
@@ -416,12 +424,16 @@ func main() {
 
 				liveBalanceMu.RLock()
 				curLiveBal := liveAccountBalance
+				curLiveUSDCBal := liveUSDCBalance
+				curLiveBNBBal := liveBNBBalance
 				liveBalanceMu.RUnlock()
+
+				baseLabel := strings.Join(cfg.GetBaseCurrencies(), "+")
 
 				dashData := ui.DashboardData{
 					StartTime:            startTime,
 					TradingMode:          cfg.TradingMode,
-					BaseCurrency:         cfg.BaseCurrency,
+					BaseCurrency:         baseLabel,
 					TradeAmountUSDT:      cfg.TradeAmountUSDT,
 					MinProfitPercent:     cfg.MinProfitPercent,
 					FeeRate:              cfg.FeeRate,
@@ -438,6 +450,8 @@ func main() {
 					EvaluationsPerSec:    atomic.LoadUint64(&evalsPerSecOutput),
 					WalletBalance:        walletBal,
 					LiveAccountBalance:   curLiveBal,
+					LiveUSDCBalance:      curLiveUSDCBal,
+					LiveBNBBalance:       curLiveBNBBal,
 					HasLiveAPIKeys:       binanceClient.HasCredentials(),
 					TotalTrades:          totalTr,
 					ProfitableTrades:     profitTr,

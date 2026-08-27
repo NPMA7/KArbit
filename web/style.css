@@ -262,8 +262,8 @@ body {
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 18px;
-  margin-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .kpi-card {
@@ -360,20 +360,19 @@ body {
 .content-left {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
+  gap: 14px;
+  height: auto;
 }
 
 .content-right {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
+  gap: 14px;
+  height: auto;
 }
 
 .panel-radar {
-  height: 480px;
-  min-height: 480px;
+  min-height: 380px;
   max-height: 480px;
   display: flex;
   flex-direction: column;
@@ -386,16 +385,15 @@ body {
 }
 
 .panel-executions {
-  flex: 1 1 0;
-  min-height: 0;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .panel-executions .table-responsive {
-  flex: 1 1 0;
-  min-height: 0;
+  min-height: 180px;
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -916,9 +914,9 @@ body {
 /* ================= HORIZONTAL ROUTE DIAGRAM & TOP PAIRS STATS ================= */
 .panel-route-logic, .panel-pair-stats {
   background: var(--bg-card);
-  height: 142px;
-  min-height: 142px;
-  max-height: 142px;
+  height: 150px;
+  min-height: 150px;
+  max-height: 150px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1132,16 +1130,47 @@ body {
   gap: 10px;
 }
 
+.horizontal-route-diagram.diagram-4hop {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.architecture-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.arch-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
 .h-route-step {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   background: var(--bg-card-sub);
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   border-left: 3px solid var(--accent-cyan);
   transition: all 0.2s ease;
+}
+
+.h-route-step.step-4hop {
+  border-left-color: #facc15;
+}
+
+.h-route-step.step-4hop .route-badge {
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.4);
 }
 
 .h-route-step:hover {
@@ -1333,14 +1362,25 @@ body {
 
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+  position: relative;
+}
+
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
 }
 
 .modal-icon-danger {
   width: 40px;
   height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: 50%;
   background: rgba(244, 63, 94, 0.15);
   border: 1px solid var(--accent-red);
@@ -1356,6 +1396,45 @@ body {
   height: 22px !important;
   max-width: 22px !important;
   max-height: 22px !important;
+}
+
+.modal-icon-badge {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--accent-yellow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-yellow);
+  flex-shrink: 0;
+}
+
+.modal-icon-badge svg,
+.modal-icon-badge .modal-icon {
+  width: 20px !important;
+  height: 20px !important;
+  max-width: 20px !important;
+  max-height: 20px !important;
+}
+
+.btn-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.btn-modal-close:hover {
+  color: #fff;
 }
 
 .modal-title {
@@ -1557,7 +1636,7 @@ body {
   .kpi-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 10px !important;
-    margin-bottom: 16px !important;
+    margin-bottom: 12px !important;
   }
 
   .main-layout {
@@ -1601,9 +1680,10 @@ body {
   }
 
   .panel-executions {
-    min-height: auto !important;
+    min-height: 240px !important;
     height: auto !important;
     width: 100% !important;
+    display: flex !important;
   }
 }
 
@@ -1751,7 +1831,9 @@ body {
   }
 
   .panel-executions .table-responsive {
+    min-height: 180px !important;
     max-height: 280px !important;
+    display: block !important;
   }
 }
 
@@ -1892,4 +1974,91 @@ body {
   .empty-bar-row {
     grid-template-columns: 80px 1fr 65px !important;
   }
+}
+
+/* USDT Route Tag Styling (Hijau Toska / Turquoise) */
+.badge-tag.tag-usdt {
+  background: rgba(20, 184, 166, 0.18) !important;
+  color: #2dd4bf !important;
+  border: 1px solid rgba(20, 184, 166, 0.45) !important;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 700;
+}
+
+/* USDC Route Tag Styling (Blue) */
+.badge-tag.tag-usdc {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(59, 130, 246, 0.45) !important;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 700;
+}
+
+.text-danger {
+  color: #f43f5e !important;
+}
+
+.text-emerald {
+  color: #10b981 !important;
+}
+
+/* Compact Hop Icon Badges (🔺 and 🔷 only) */
+.badge-hop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-right: 6px;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.badge-hop-3 {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.badge-hop-4 {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+/* Fixed Fee Rate Box */
+.fixed-fee-container {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-top: 4px;
+}
+
+.fixed-fee-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fee-icon {
+  font-size: 1.15rem;
+}
+
+.fee-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fee-main {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.fee-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }

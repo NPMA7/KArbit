@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -233,27 +234,58 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		return res
 	}
 
+	execQty1, _ := strconv.ParseFloat(resp1.ExecutedQty, 64)
+	if execQty1 <= 0 {
+		execQty1 = opp.Leg1Qty
+	}
+
 	// Leg 2
 	side2 := exchange.SideBuy
 	if opp.Triangle.Leg2.Action == "SELL" {
 		side2 = exchange.SideSell
+	}
+	qty2 := opp.Leg2Qty
+	if opp.Triangle.Leg2.Action == "SELL" && execQty1 > 0 {
+		qty2 = execQty1 * 0.999 // Fee safety margin
 	}
 	req2 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg2.Symbol,
 		Side:        side2,
 		Type:        exchange.TypeLimit,
 		TimeInForce: exchange.TimeInForceIOC,
-		Quantity:    opp.Leg2Qty,
+		Quantity:    qty2,
 		Price:       opp.Leg2Price,
 		StepSize:    opp.Triangle.Leg2.StepSize,
 		TickSize:    opp.Triangle.Leg2.TickSize,
 	}
 	resp2, err2 := e.client.CreateOrder(ctx, req2)
 	if err2 != nil {
+		// EMERGENCY AUTO-ROLLBACK: Leg 1 was filled (resp1.OrderID).
+		// Immediately liquidate Leg 1 asset back to USDT so funds never get stuck.
+		unwindSide := exchange.SideSell
+		if opp.Triangle.Leg1.Action == "SELL" {
+			unwindSide = exchange.SideBuy
+		}
+		unwindReq := exchange.OrderRequest{
+			Symbol:      opp.Triangle.Leg1.Symbol,
+			Side:        unwindSide,
+			Type:        exchange.TypeMarket,
+			Quantity:    execQty1 * 0.999,
+			StepSize:    opp.Triangle.Leg1.StepSize,
+			TickSize:    opp.Triangle.Leg1.TickSize,
+		}
+		unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+		unwindMsg := ""
+		if unwindErr != nil {
+			unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+		} else {
+			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to USDT orderId=%d)", unwindResp.OrderID)
+		}
+
 		res := ExecutionResult{
 			Opportunity:  opp,
 			IsSuccess:    false,
-			ErrorMessage: fmt.Sprintf("Leg 2 failed (Leg 1 filled orderId=%d): %v", resp1.OrderID, err2),
+			ErrorMessage: fmt.Sprintf("Leg 2 failed (Leg 1 filled orderId=%d): %v%s", resp1.OrderID, err2, unwindMsg),
 			Mode:         "LIVE",
 			ExecutedAt:   time.Now(),
 		}
@@ -261,32 +293,125 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		return res
 	}
 
+	execQty2, _ := strconv.ParseFloat(resp2.ExecutedQty, 64)
+	if execQty2 <= 0 {
+		execQty2 = opp.Leg2Qty
+	}
+
 	// Leg 3
 	side3 := exchange.SideSell
 	if opp.Triangle.Leg3.Action == "BUY" {
 		side3 = exchange.SideBuy
+	}
+	qty3 := opp.Leg3Qty
+	if opp.Triangle.Leg3.Action == "SELL" && execQty2 > 0 {
+		qty3 = execQty2 * 0.999 // Fee safety margin to strictly prevent insufficient balance
 	}
 	req3 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg3.Symbol,
 		Side:        side3,
 		Type:        exchange.TypeLimit,
 		TimeInForce: exchange.TimeInForceIOC,
-		Quantity:    opp.Leg3Qty,
+		Quantity:    qty3,
 		Price:       opp.Leg3Price,
 		StepSize:    opp.Triangle.Leg3.StepSize,
 		TickSize:    opp.Triangle.Leg3.TickSize,
 	}
 	resp3, err3 := e.client.CreateOrder(ctx, req3)
 	if err3 != nil {
+		// EMERGENCY AUTO-ROLLBACK: Leg 3 failed.
+		// Liquidate AssetB back to Base.
+		unwindSide := exchange.SideSell
+		if opp.Triangle.Leg2.Action == "BUY" {
+			unwindSide = exchange.SideSell
+		}
+		unwindReq := exchange.OrderRequest{
+			Symbol:   opp.Triangle.Leg2.Symbol,
+			Side:     unwindSide,
+			Type:     exchange.TypeMarket,
+			Quantity: execQty2 * 0.999,
+			StepSize: opp.Triangle.Leg2.StepSize,
+			TickSize: opp.Triangle.Leg2.TickSize,
+		}
+		unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+		unwindMsg := ""
+		if unwindErr != nil {
+			unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+		} else {
+			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
+		}
+
 		res := ExecutionResult{
 			Opportunity:  opp,
 			IsSuccess:    false,
-			ErrorMessage: fmt.Sprintf("Leg 3 failed (Leg 1 id=%d, Leg 2 id=%d): %v", resp1.OrderID, resp2.OrderID, err3),
+			ErrorMessage: fmt.Sprintf("Leg 3 failed (Leg 1 id=%d, Leg 2 id=%d): %v%s", resp1.OrderID, resp2.OrderID, err3, unwindMsg),
 			Mode:         "LIVE",
 			ExecutedAt:   time.Now(),
 		}
 		e.appendLog(res)
 		return res
+	}
+
+	execQty3, _ := strconv.ParseFloat(resp3.ExecutedQty, 64)
+	if execQty3 <= 0 {
+		execQty3 = opp.Leg3Qty
+	}
+
+	var resp4 *exchange.OrderResponse
+	if opp.Triangle.HopCount == 4 && opp.Triangle.Leg4 != nil {
+		leg4 := opp.Triangle.Leg4
+		side4 := exchange.SideSell
+		if leg4.Action == "BUY" {
+			side4 = exchange.SideBuy
+		}
+		qty4 := opp.Leg4Qty
+		if leg4.Action == "SELL" && execQty3 > 0 {
+			qty4 = execQty3 * 0.999 // Fee safety margin
+		}
+		req4 := exchange.OrderRequest{
+			Symbol:      leg4.Symbol,
+			Side:        side4,
+			Type:        exchange.TypeLimit,
+			TimeInForce: exchange.TimeInForceIOC,
+			Quantity:    qty4,
+			Price:       opp.Leg4Price,
+			StepSize:    leg4.StepSize,
+			TickSize:    leg4.TickSize,
+		}
+		var err4 error
+		resp4, err4 = e.client.CreateOrder(ctx, req4)
+		if err4 != nil {
+			// EMERGENCY AUTO-ROLLBACK: Leg 4 failed. Liquidate AssetC back to Base.
+			unwindSide := exchange.SideSell
+			if leg4.Action == "BUY" {
+				unwindSide = exchange.SideBuy
+			}
+			unwindReq := exchange.OrderRequest{
+				Symbol:   leg4.Symbol,
+				Side:     unwindSide,
+				Type:     exchange.TypeMarket,
+				Quantity: execQty3 * 0.999,
+				StepSize: leg4.StepSize,
+				TickSize: leg4.TickSize,
+			}
+			unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+			unwindMsg := ""
+			if unwindErr != nil {
+				unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+			} else {
+				unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
+			}
+
+			res := ExecutionResult{
+				Opportunity:  opp,
+				IsSuccess:    false,
+				ErrorMessage: fmt.Sprintf("Leg 4 failed (L1=%d, L2=%d, L3=%d): %v%s", resp1.OrderID, resp2.OrderID, resp3.OrderID, err4, unwindMsg),
+				Mode:         "LIVE",
+				ExecutedAt:   time.Now(),
+			}
+			e.appendLog(res)
+			return res
+		}
 	}
 
 	latency := time.Since(startExec).Milliseconds()
@@ -297,13 +422,18 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		atomic.AddUint64(&e.profitableTrades, 1)
 	}
 
+	modeStr := fmt.Sprintf("LIVE (L1=%d, L2=%d, L3=%d)", resp1.OrderID, resp2.OrderID, resp3.OrderID)
+	if resp4 != nil {
+		modeStr = fmt.Sprintf("LIVE 4-HOP (L1=%d, L2=%d, L3=%d, L4=%d)", resp1.OrderID, resp2.OrderID, resp3.OrderID, resp4.OrderID)
+	}
+
 	res := ExecutionResult{
 		Opportunity:            opp,
 		IsSuccess:              true,
 		ExecutionLatencyMs:     latency,
 		ActualNetProfitUSDT:    actualProfitUSDT,
 		WalletBalanceAfterUSDT: e.virtualWalletBalance,
-		Mode:                   fmt.Sprintf("LIVE (L1=%d, L2=%d, L3=%d)", resp1.OrderID, resp2.OrderID, resp3.OrderID),
+		Mode:                   modeStr,
 		ExecutedAt:             time.Now(),
 	}
 

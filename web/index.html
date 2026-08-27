@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=8.0">
+  <link rel="stylesheet" href="/style.css?v=17.0">
 </head>
 <body>
   <div class="app-container">
@@ -134,36 +134,90 @@
           <div class="panel-header py-2">
             <div class="panel-title-group">
               <svg class="panel-icon text-yellow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22 12 2"></polygon></svg>
-              <h2>Arbitrage Route Architecture & Execution Logic</h2>
+              <h2>Arbitrage Execution Architecture</h2>
+              <div class="radar-tab-group" style="margin-left: 10px;">
+                <button type="button" class="radar-tab-btn active" id="btn-arch-3hop" onclick="window.setArchView('3hop')">🔺 3-Hop</button>
+                <button type="button" class="radar-tab-btn" id="btn-arch-4hop" onclick="window.setArchView('4hop')">🔷 4-Hop</button>
+              </div>
             </div>
             <div class="formula-pill">
-              <span class="text-muted">Net Spread Formula:</span>
-              <code>Final USDT = Modal &times; (1 - Fee)<sup>3</sup> &times; Rate<sub>1</sub> &times; Rate<sub>2</sub> &times; Rate<sub>3</sub></code>
+              <span class="text-muted">Formula:</span>
+              <code>Final = Modal &times; (1 - Fee)<sup>Hops</sup> &times; &prod; Rate<sub>i</sub></code>
             </div>
           </div>
           <div class="panel-body py-3">
-            <div class="horizontal-route-diagram">
-              <div class="h-route-step">
-                <span class="route-badge">LEG 1</span>
-                <div class="h-route-info">
-                  <span><strong class="text-cyan">USDT</strong> <span class="route-action">&rarr; BUY</span> <strong>Asset A</strong></span>
-                  <span class="h-subtext">Order: <strong>Best Ask Price</strong></span>
+            <!-- 3-Hop Triangular Diagram -->
+            <div class="architecture-row" id="arch-row-3hop">
+              <div class="arch-tag">
+                <span class="badge-hop badge-hop-3">🔺</span>
+                <strong>3-Hop Triangular Arbitrage Loop</strong>
+                <span class="text-muted" style="font-size: 0.68rem;">(1.980 Jalur Aktif)</span>
+              </div>
+              <div class="horizontal-route-diagram mt-1">
+                <div class="h-route-step">
+                  <span class="route-badge">LEG 1</span>
+                  <div class="h-route-info">
+                    <span><strong class="text-cyan">Base</strong> <span class="route-action">&rarr; BUY</span> <strong>Asset A</strong></span>
+                    <span class="h-subtext">Order: <strong>Best Ask Price</strong></span>
+                  </div>
+                </div>
+                <div class="h-route-arrow">&rarr;</div>
+                <div class="h-route-step">
+                  <span class="route-badge">LEG 2</span>
+                  <div class="h-route-info">
+                    <span><strong>Asset A</strong> <span class="route-action">&rarr; CONVERT</span> <strong>Asset B</strong></span>
+                    <span class="h-subtext">Order: <strong>Cross Pair Price</strong></span>
+                  </div>
+                </div>
+                <div class="h-route-arrow">&rarr;</div>
+                <div class="h-route-step">
+                  <span class="route-badge">LEG 3</span>
+                  <div class="h-route-info">
+                    <span><strong>Asset B</strong> <span class="route-action">&rarr; SELL</span> <strong class="text-emerald">Base</strong></span>
+                    <span class="h-subtext">Order: <strong>Best Bid (Closed Loop)</strong></span>
+                  </div>
                 </div>
               </div>
-              <div class="h-route-arrow">&rarr;</div>
-              <div class="h-route-step">
-                <span class="route-badge">LEG 2</span>
-                <div class="h-route-info">
-                  <span><strong>Asset A</strong> <span class="route-action">&rarr; CONVERT</span> <strong>Asset B</strong></span>
-                  <span class="h-subtext">Order: <strong>Ask / Bid Cross Pair</strong></span>
-                </div>
+            </div>
+
+            <!-- 4-Hop Quadrilateral Diagram -->
+            <div class="architecture-row" id="arch-row-4hop" style="display: none;">
+              <div class="arch-tag">
+                <span class="badge-hop badge-hop-4">🔷</span>
+                <strong>4-Hop Quadrilateral Arbitrage Loop</strong>
+                <span class="text-muted" style="font-size: 0.68rem;">(100.000 Jalur Aktif)</span>
               </div>
-              <div class="h-route-arrow">&rarr;</div>
-              <div class="h-route-step">
-                <span class="route-badge">LEG 3</span>
-                <div class="h-route-info">
-                  <span><strong>Asset B</strong> <span class="route-action">&rarr; SELL</span> <strong class="text-emerald">USDT</strong></span>
-                  <span class="h-subtext">Order: <strong>Best Bid Price (Closed Loop)</strong></span>
+              <div class="horizontal-route-diagram diagram-4hop mt-1">
+                <div class="h-route-step step-4hop">
+                  <span class="route-badge">LEG 1</span>
+                  <div class="h-route-info">
+                    <span><strong class="text-cyan">Base</strong> <span class="route-action">&rarr; BUY</span> <strong>Asset A</strong></span>
+                    <span class="h-subtext">Order: <strong>Best Ask Price</strong></span>
+                  </div>
+                </div>
+                <div class="h-route-arrow">&rarr;</div>
+                <div class="h-route-step step-4hop">
+                  <span class="route-badge">LEG 2</span>
+                  <div class="h-route-info">
+                    <span><strong>Asset A</strong> <span class="route-action">&rarr; CONVERT</span> <strong>Asset B</strong></span>
+                    <span class="h-subtext">Order: <strong>Cross Pair 1</strong></span>
+                  </div>
+                </div>
+                <div class="h-route-arrow">&rarr;</div>
+                <div class="h-route-step step-4hop">
+                  <span class="route-badge">LEG 3</span>
+                  <div class="h-route-info">
+                    <span><strong>Asset B</strong> <span class="route-action">&rarr; CONVERT</span> <strong>Asset C</strong></span>
+                    <span class="h-subtext">Order: <strong>Cross Pair 2</strong></span>
+                  </div>
+                </div>
+                <div class="h-route-arrow">&rarr;</div>
+                <div class="h-route-step step-4hop">
+                  <span class="route-badge">LEG 4</span>
+                  <div class="h-route-info">
+                    <span><strong>Asset C</strong> <span class="route-action">&rarr; SELL</span> <strong class="text-emerald">Base</strong></span>
+                    <span class="h-subtext">Order: <strong>Best Bid (Closed Loop)</strong></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -175,20 +229,23 @@
           <div class="panel-header">
             <div class="panel-title-group">
               <span class="pulse-ring"></span>
-              <h2>Live Triangular Spread Radar</h2>
+              <h2>Live Arbitrage Spread Radar</h2>
               <span class="badge-live-count" id="radar-count">0 active paths</span>
             </div>
             <div class="panel-tools">
               <!-- Radar Mode Switch Tabs -->
               <div class="radar-tab-group">
                 <button type="button" class="radar-tab-btn active" data-filter="all" id="tab-radar-all" onclick="window.setRadarFilterTab('all')">
-                  All Routes <span class="tab-badge" id="tab-count-all">0</span>
+                  All <span class="tab-badge" id="tab-count-all">0</span>
+                </button>
+                <button type="button" class="radar-tab-btn" data-filter="3hop" id="tab-radar-3hop" onclick="window.setRadarFilterTab('3hop')">
+                  🔺 3-Hop <span class="tab-badge" id="tab-count-3hop">0</span>
+                </button>
+                <button type="button" class="radar-tab-btn" data-filter="4hop" id="tab-radar-4hop" onclick="window.setRadarFilterTab('4hop')">
+                  🔷 4-Hop <span class="tab-badge" id="tab-count-4hop">0</span>
                 </button>
                 <button type="button" class="radar-tab-btn" data-filter="triggered" id="tab-radar-triggered" onclick="window.setRadarFilterTab('triggered')">
                   ⚡ Triggered <span class="tab-badge badge-green" id="tab-count-triggered">0</span>
-                </button>
-                <button type="button" class="radar-tab-btn" data-filter="monitoring" id="tab-radar-monitoring" onclick="window.setRadarFilterTab('monitoring')">
-                  📊 Monitoring <span class="tab-badge" id="tab-count-monitoring">0</span>
                 </button>
               </div>
               <span class="filter-indicator">Trigger: &ge; <strong id="filter-min-profit-tag">+0.05%</strong></span>
@@ -198,11 +255,10 @@
             <table class="data-table" id="opportunities-table">
               <thead>
                 <tr>
-                  <th>TRIANGULAR ROUTE</th>
+                  <th>ARBITRAGE ROUTE & TOPOLOGY</th>
                   <th>GROSS SPREAD</th>
                   <th>EST. NET PROFIT %</th>
                   <th>EST. PROFIT ($)</th>
-                  <th>SPREAD STATUS</th>
                   <th>QUOTE AGE</th>
                 </tr>
               </thead>
@@ -317,6 +373,14 @@
               <div class="api-card-body">
                 <div class="live-balance-box" id="live-balance-box">
                   <div class="bal-row">
+                    <span class="bal-label">USDT Balance (Pool):</span>
+                    <span class="bal-val font-mono text-emerald" id="live-usdt-bal">$0.00 USDT</span>
+                  </div>
+                  <div class="bal-row">
+                    <span class="bal-label">USDC Balance (Pool):</span>
+                    <span class="bal-val font-mono text-cyan" id="live-usdc-bal">$0.00 USDC</span>
+                  </div>
+                  <div class="bal-row">
                     <span class="bal-label">BNB Balance (Fees):</span>
                     <span class="bal-val font-mono text-yellow" id="live-bnb-bal">0.0000 BNB</span>
                   </div>
@@ -351,51 +415,19 @@
                 <span class="form-hint">Only executes when net spread exceeds this threshold</span>
               </div>
 
-              <!-- Fee Rate & BNB Discount -->
-              <div class="form-group">
-                <label for="input-fee-rate">Taker Fee Rate per Leg</label>
-                <div class="input-with-addon">
-                  <input type="number" id="input-fee-rate" step="0.00005" min="0" max="0.01" value="0.00075" required>
-                  <span class="addon font-mono">(0.075%)</span>
-                </div>
-                <div class="checkbox-row mt-2">
-                  <input type="checkbox" id="input-bnb-discount" checked>
-                  <label for="input-bnb-discount">Use 25% BNB Fee Discount</label>
-                </div>
-              </div>
-
               <!-- Section 2: HFT Scanner & Routes -->
               <div class="form-section-header mt-2">
                 <span class="section-title">📡 HFT Engine & Scanner Setup</span>
               </div>
 
-              <!-- Tracked Triangular Paths -->
+              <!-- Radar Display Limit (Manual Input max 999) -->
               <div class="form-group">
-                <label for="input-tracked-triangles">Tracked Scanner Paths (Volume)</label>
+                <label for="input-radar-limit">Radar Display Active Routes (Maks 999)</label>
                 <div class="input-with-addon">
-                  <select id="input-tracked-triangles" class="form-select">
-                    <option value="100">100 paths (Ultra High-Speed / Top 20 Assets)</option>
-                    <option value="250">250 paths (High Liquidity)</option>
-                    <option value="350" selected>350 paths (Recommended / Balanced)</option>
-                    <option value="500">500 paths (Extended Coverage)</option>
-                    <option value="1000">1000 paths (Deep Market Scanner)</option>
-                  </select>
+                  <input type="number" id="input-radar-limit" min="1" max="999" step="1" value="100" required>
+                  <span class="addon font-mono">routes</span>
                 </div>
-                <span class="form-hint">Number of 3-leg cycles evaluated simultaneously</span>
-              </div>
-
-              <!-- Radar Display Limit -->
-              <div class="form-group">
-                <label for="input-radar-limit">Radar Display Active Routes</label>
-                <div class="input-with-addon">
-                  <select id="input-radar-limit" class="form-select">
-                    <option value="15">15 active routes (Compact)</option>
-                    <option value="30">30 active routes (Standard)</option>
-                    <option value="50" selected>50 active routes (Recommended)</option>
-                    <option value="100">100 active routes (Extended)</option>
-                  </select>
-                </div>
-                <span class="form-hint">Number of top routes rendered in Radar table</span>
+                <span class="form-hint">Jumlah rute arbitrase aktif yang ditampilkan di tabel Radar (1 - 999)</span>
               </div>
 
               <!-- Section 3: Risk Guard & Limits -->
@@ -501,8 +533,8 @@
       <div class="modal-card" style="max-width: 420px;">
         <div class="modal-header">
           <div class="modal-title-row">
-            <div class="modal-icon-badge" style="background: rgba(245, 158, 11, 0.12); color: var(--accent-yellow); border-color: rgba(245, 158, 11, 0.3);">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="modal-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <div class="modal-icon-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="modal-icon" width="20" height="20"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
             </div>
             <div>
               <h3 class="modal-title">Konfirmasi Keamanan (PIN)</h3>
@@ -543,6 +575,6 @@
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="/app.js?v=8.0"></script>
+  <script src="/app.js?v=17.0"></script>
 </body>
 </html>

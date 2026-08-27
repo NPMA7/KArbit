@@ -10,13 +10,14 @@ import (
 
 // Config represents all operational parameters for the KArbit HFT engine.
 type Config struct {
-	// Base Currency for triangular cycles (default "USDT")
-	BaseCurrency string `json:"base_currency"`
+	// Base Currency for triangular cycles (default "USDT,USDC")
+	BaseCurrency   string   `json:"base_currency"`
+	BaseCurrencies []string `json:"base_currencies,omitempty"`
 
 	// Trading Mode: "paper" (simulation) or "live" (real Binance orders)
 	TradingMode string `json:"trading_mode"`
 
-	// Trade capital per triangular arbitrage cycle in USDT (default 100.0)
+	// Trade capital per triangular arbitrage cycle in USDT (default 10.0)
 	TradeAmountUSDT float64 `json:"trade_amount_usdt"`
 
 	// Minimum net profit threshold in percent after all 3-leg fees (e.g., 0.05 = +0.05%)
@@ -68,7 +69,8 @@ func DefaultConfig() *Config {
 	}
 
 	return &Config{
-		BaseCurrency:         "USDT",
+		BaseCurrency:         "USDT,USDC",
+		BaseCurrencies:       []string{"USDT", "USDC"},
 		TradingMode:          "live",
 		TradeAmountUSDT:      10.0,
 		MinProfitPercent:     0.05,
@@ -77,7 +79,7 @@ func DefaultConfig() *Config {
 		MaxLatencyMs:         200,
 		MaxSlippageTolerance: 0.001,
 		MaxDailyLossUSDT:     50.0,
-		MaxTrackedTriangles:  350,
+		MaxTrackedTriangles:  0, // 0 = Track 100% of all discovered triangular paths (~3,182 triangles)
 		RadarDisplayLimit:    50,
 		WorkerCount:          workers,
 		BinanceAPIKey:        "",
@@ -187,4 +189,28 @@ func (c *Config) ParseFlags() {
 	c.MaxLatencyMs = *maxLatency
 	c.BaseCurrency = *baseCurrency
 	c.WebPort = *webPort
+}
+
+// GetBaseCurrencies returns the list of active base currencies for multi-base triangular arbitrage.
+func (c *Config) GetBaseCurrencies() []string {
+	if len(c.BaseCurrencies) > 0 {
+		return c.BaseCurrencies
+	}
+	if strings.Contains(c.BaseCurrency, ",") {
+		parts := strings.Split(c.BaseCurrency, ",")
+		var res []string
+		for _, p := range parts {
+			t := strings.TrimSpace(p)
+			if t != "" {
+				res = append(res, t)
+			}
+		}
+		if len(res) > 0 {
+			return res
+		}
+	}
+	if c.BaseCurrency != "" {
+		return []string{strings.TrimSpace(c.BaseCurrency)}
+	}
+	return []string{"USDT", "USDC"}
 }

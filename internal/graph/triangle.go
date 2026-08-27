@@ -14,7 +14,7 @@ const (
 	ActionSell TradeAction = "SELL"
 )
 
-// Leg represents one trade hop in a triangular cycle.
+// Leg represents one trade hop in a triangular or quadrilateral cycle.
 type Leg struct {
 	Symbol      string      `json:"symbol"`
 	FromAsset   string      `json:"from_asset"`
@@ -26,19 +26,22 @@ type Leg struct {
 	MinQty      float64     `json:"min_qty"`
 }
 
-// Triangle represents a pre-compiled 3-hop triangular path starting and ending at BaseAsset.
+// Triangle represents a pre-compiled 3-hop or 4-hop arbitrage path starting and ending at BaseAsset.
 type Triangle struct {
-	ID        string    `json:"id"`
-	BaseAsset string    `json:"base_asset"`
-	AssetA    string    `json:"asset_a"`
-	AssetB    string    `json:"asset_b"`
-	Leg1      Leg       `json:"leg1"`
-	Leg2      Leg       `json:"leg2"`
-	Leg3      Leg       `json:"leg3"`
-	Symbols   [3]string `json:"symbols"`
+	ID        string   `json:"id"`
+	BaseAsset string   `json:"base_asset"`
+	AssetA    string   `json:"asset_a"`
+	AssetB    string   `json:"asset_b"`
+	AssetC    string   `json:"asset_c,omitempty"` // Used for 4-Hop
+	HopCount  int      `json:"hop_count"`         // 3 or 4
+	Leg1      Leg      `json:"leg1"`
+	Leg2      Leg      `json:"leg2"`
+	Leg3      Leg      `json:"leg3"`
+	Leg4      *Leg     `json:"leg4,omitempty"`    // Used for 4-Hop
+	Symbols   []string `json:"symbols"`
 }
 
-// NewTriangle constructs a Triangle and pre-populates metadata.
+// NewTriangle constructs a 3-hop Triangle and pre-populates metadata.
 func NewTriangle(baseAsset, assetA, assetB string, leg1, leg2, leg3 Leg) *Triangle {
 	id := fmt.Sprintf("%s->%s->%s->%s", baseAsset, assetA, assetB, baseAsset)
 	return &Triangle{
@@ -46,10 +49,29 @@ func NewTriangle(baseAsset, assetA, assetB string, leg1, leg2, leg3 Leg) *Triang
 		BaseAsset: baseAsset,
 		AssetA:    assetA,
 		AssetB:    assetB,
+		HopCount:  3,
 		Leg1:      leg1,
 		Leg2:      leg2,
 		Leg3:      leg3,
-		Symbols:   [3]string{leg1.Symbol, leg2.Symbol, leg3.Symbol},
+		Symbols:   []string{leg1.Symbol, leg2.Symbol, leg3.Symbol},
+	}
+}
+
+// NewQuad constructs a 4-hop Quadrilateral arbitrage path and pre-populates metadata.
+func NewQuad(baseAsset, assetA, assetB, assetC string, leg1, leg2, leg3, leg4 Leg) *Triangle {
+	id := fmt.Sprintf("%s->%s->%s->%s->%s", baseAsset, assetA, assetB, assetC, baseAsset)
+	return &Triangle{
+		ID:        id,
+		BaseAsset: baseAsset,
+		AssetA:    assetA,
+		AssetB:    assetB,
+		AssetC:    assetC,
+		HopCount:  4,
+		Leg1:      leg1,
+		Leg2:      leg2,
+		Leg3:      leg3,
+		Leg4:      &leg4,
+		Symbols:   []string{leg1.Symbol, leg2.Symbol, leg3.Symbol, leg4.Symbol},
 	}
 }
 
