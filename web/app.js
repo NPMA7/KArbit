@@ -523,7 +523,7 @@ function renderExecutionsTable(logs) {
         <td class="font-mono text-muted">${timeStr}</td>
         <td>
           <div class="route-cell">
-            <span class="badge-tag">USDT</span>&rarr;<span>${t.asset_a || 'A'}</span>&rarr;<span>${t.asset_b || 'B'}</span>&rarr;<span class="badge-tag">USDT</span>
+            <span class="badge-tag">${t.id ? t.id.replace(/->/g, ' &rarr; ') : `${t.base_asset || 'USDT'} &rarr; ${t.asset_a || 'A'} &rarr; ${t.asset_b || 'B'} &rarr; ${t.base_asset || 'USDT'}`}</span>
           </div>
         </td>
         <td class="font-mono ${isWin ? 'text-emerald' : 'text-danger'}">+${(opp.net_profit_percent || 0).toFixed(3)}%</td>
@@ -531,7 +531,11 @@ function renderExecutionsTable(logs) {
         <td class="font-mono text-muted">${log.execution_time_ns ? (log.execution_time_ns / 1000000).toFixed(1) : '<1'} ms</td>
         <td>
           <span class="${modeBadgeClass}">${(log.mode).toUpperCase()}</span>
-          ${log.is_success ? '<span class="text-emerald">✔ FILLED</span>' : `<span class="text-danger">✖ ${log.error_message || 'FAILED'}</span>`}
+          ${log.is_success 
+            ? '<span class="text-emerald font-weight-600">✔ FILLED (SUKSES)</span>' 
+            : ((log.error_message && (log.error_message.includes('DIBATALKAN') || log.error_message.includes('expired') || log.error_message.includes('EXPIRED')))
+                ? `<span class="text-warning">⚠️ DIBATALKAN (Harga bergerak cepat / 0 Fill)</span>`
+                : `<span class="text-danger">✖ ${log.error_message || 'FAILED'}</span>`)}
         </td>
       </tr>
     `;

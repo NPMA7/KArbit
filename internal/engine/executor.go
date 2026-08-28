@@ -130,7 +130,7 @@ func (e *Executor) Execute(ctx context.Context, opp *ArbitrageOpportunity) Execu
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Enforce 100ms cooldown between executions to prevent double-firing on same tick
+	// Enforce 500ms cooldown between executions to prevent double-firing and race conditions on balance
 	if time.Now().Before(e.executionCooldownUntil) {
 		return ExecutionResult{
 			Opportunity:  opp,
@@ -140,7 +140,7 @@ func (e *Executor) Execute(ctx context.Context, opp *ArbitrageOpportunity) Execu
 			ExecutedAt:   time.Now(),
 		}
 	}
-	e.executionCooldownUntil = time.Now().Add(100 * time.Millisecond)
+	e.executionCooldownUntil = time.Now().Add(500 * time.Millisecond)
 
 	// 1. Risk Manager Limit & Circuit Breaker Check
 	if err := e.riskManager.CheckSafety(opp.StartAmountUSDT, opp.EstimatedSlippage); err != nil {
@@ -235,8 +235,16 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 
 	execQty1, _ := strconv.ParseFloat(resp1.ExecutedQty, 64)
-	if execQty1 <= 0 {
-		execQty1 = opp.Leg1Qty
+	if execQty1 <= 0 || resp1.Status == "EXPIRED" {
+		res := ExecutionResult{
+			Opportunity:  opp,
+			IsSuccess:    false,
+			ErrorMessage: fmt.Sprintf("⚠️ DIBATALKAN OLEH BURSA (Leg 1 IOC Expired / Harga bergerak cepat, orderId=%d - Saldo 100%% Aman)", resp1.OrderID),
+			Mode:         "LIVE",
+			ExecutedAt:   time.Now(),
+		}
+		e.appendLog(res)
+		return res
 	}
 
 	// Leg 2
@@ -246,7 +254,7 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 	qty2 := opp.Leg2Qty
 	if opp.Triangle.Leg2.Action == "SELL" && execQty1 > 0 {
-		qty2 = execQty1 * 0.999 // Fee safety margin
+		qty2 = adjustToStepSize(execQty1*0.9992, opp.Triangle.Leg2.StepSize) // 0.2% safe fee buffer + stepSize
 	}
 	req2 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg2.Symbol,
@@ -261,25 +269,26 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	resp2, err2 := e.client.CreateOrder(ctx, req2)
 	if err2 != nil {
 		// EMERGENCY AUTO-ROLLBACK: Leg 1 was filled (resp1.OrderID).
-		// Immediately liquidate Leg 1 asset back to USDT so funds never get stuck.
+		// Immediately liquidate Leg 1 asset back to Base so funds never get stuck.
 		unwindSide := exchange.SideSell
 		if opp.Triangle.Leg1.Action == "SELL" {
 			unwindSide = exchange.SideBuy
 		}
+		unwindQty := adjustToStepSize(execQty1*0.9992, opp.Triangle.Leg1.StepSize)
 		unwindReq := exchange.OrderRequest{
-			Symbol:      opp.Triangle.Leg1.Symbol,
-			Side:        unwindSide,
-			Type:        exchange.TypeMarket,
-			Quantity:    execQty1 * 0.999,
-			StepSize:    opp.Triangle.Leg1.StepSize,
-			TickSize:    opp.Triangle.Leg1.TickSize,
+			Symbol:   opp.Triangle.Leg1.Symbol,
+			Side:     unwindSide,
+			Type:     exchange.TypeMarket,
+			Quantity: unwindQty,
+			StepSize: opp.Triangle.Leg1.StepSize,
+			TickSize: opp.Triangle.Leg1.TickSize,
 		}
 		unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
 		unwindMsg := ""
 		if unwindErr != nil {
 			unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
 		} else {
-			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to USDT orderId=%d)", unwindResp.OrderID)
+			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
 		}
 
 		res := ExecutionResult{
@@ -294,8 +303,38 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 
 	execQty2, _ := strconv.ParseFloat(resp2.ExecutedQty, 64)
-	if execQty2 <= 0 {
-		execQty2 = opp.Leg2Qty
+	if execQty2 <= 0 || resp2.Status == "EXPIRED" {
+		// Leg 2 expired without fill -> Unwind Leg 1
+		unwindSide := exchange.SideSell
+		if opp.Triangle.Leg1.Action == "SELL" {
+			unwindSide = exchange.SideBuy
+		}
+		unwindQty := adjustToStepSize(execQty1*0.9992, opp.Triangle.Leg1.StepSize)
+		unwindReq := exchange.OrderRequest{
+			Symbol:   opp.Triangle.Leg1.Symbol,
+			Side:     unwindSide,
+			Type:     exchange.TypeMarket,
+			Quantity: unwindQty,
+			StepSize: opp.Triangle.Leg1.StepSize,
+			TickSize: opp.Triangle.Leg1.TickSize,
+		}
+		unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+		unwindMsg := ""
+		if unwindErr != nil {
+			unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+		} else {
+			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
+		}
+
+		res := ExecutionResult{
+			Opportunity:  opp,
+			IsSuccess:    false,
+			ErrorMessage: fmt.Sprintf("⚠️ DIBATALKAN OLEH BURSA (Leg 2 IOC Expired, L1 filled id=%d)%s", resp1.OrderID, unwindMsg),
+			Mode:         "LIVE",
+			ExecutedAt:   time.Now(),
+		}
+		e.appendLog(res)
+		return res
 	}
 
 	// Leg 3
@@ -305,7 +344,7 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 	qty3 := opp.Leg3Qty
 	if opp.Triangle.Leg3.Action == "SELL" && execQty2 > 0 {
-		qty3 = execQty2 * 0.999 // Fee safety margin to strictly prevent insufficient balance
+		qty3 = adjustToStepSize(execQty2*0.9992, opp.Triangle.Leg3.StepSize) // Fee safety margin + stepSize
 	}
 	req3 := exchange.OrderRequest{
 		Symbol:      opp.Triangle.Leg3.Symbol,
@@ -325,11 +364,12 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		if opp.Triangle.Leg2.Action == "BUY" {
 			unwindSide = exchange.SideSell
 		}
+		unwindQty := adjustToStepSize(execQty2*0.9992, opp.Triangle.Leg2.StepSize)
 		unwindReq := exchange.OrderRequest{
 			Symbol:   opp.Triangle.Leg2.Symbol,
 			Side:     unwindSide,
 			Type:     exchange.TypeMarket,
-			Quantity: execQty2 * 0.999,
+			Quantity: unwindQty,
 			StepSize: opp.Triangle.Leg2.StepSize,
 			TickSize: opp.Triangle.Leg2.TickSize,
 		}
@@ -353,8 +393,38 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 	}
 
 	execQty3, _ := strconv.ParseFloat(resp3.ExecutedQty, 64)
-	if execQty3 <= 0 {
-		execQty3 = opp.Leg3Qty
+	if execQty3 <= 0 || resp3.Status == "EXPIRED" {
+		// Leg 3 expired without fill -> Unwind Leg 2
+		unwindSide := exchange.SideSell
+		if opp.Triangle.Leg2.Action == "BUY" {
+			unwindSide = exchange.SideSell
+		}
+		unwindQty := adjustToStepSize(execQty2*0.9992, opp.Triangle.Leg2.StepSize)
+		unwindReq := exchange.OrderRequest{
+			Symbol:   opp.Triangle.Leg2.Symbol,
+			Side:     unwindSide,
+			Type:     exchange.TypeMarket,
+			Quantity: unwindQty,
+			StepSize: opp.Triangle.Leg2.StepSize,
+			TickSize: opp.Triangle.Leg2.TickSize,
+		}
+		unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+		unwindMsg := ""
+		if unwindErr != nil {
+			unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+		} else {
+			unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
+		}
+
+		res := ExecutionResult{
+			Opportunity:  opp,
+			IsSuccess:    false,
+			ErrorMessage: fmt.Sprintf("⚠️ DIBATALKAN OLEH BURSA (Leg 3 IOC Expired, L1 id=%d, L2 id=%d)%s", resp1.OrderID, resp2.OrderID, unwindMsg),
+			Mode:         "LIVE",
+			ExecutedAt:   time.Now(),
+		}
+		e.appendLog(res)
+		return res
 	}
 
 	var resp4 *exchange.OrderResponse
@@ -366,7 +436,7 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 		}
 		qty4 := opp.Leg4Qty
 		if leg4.Action == "SELL" && execQty3 > 0 {
-			qty4 = execQty3 * 0.999 // Fee safety margin
+			qty4 = adjustToStepSize(execQty3*0.9992, leg4.StepSize) // Safe fee margin (0.2%) + stepSize
 		}
 		req4 := exchange.OrderRequest{
 			Symbol:      leg4.Symbol,
@@ -386,11 +456,12 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 			if leg4.Action == "BUY" {
 				unwindSide = exchange.SideBuy
 			}
+			unwindQty := adjustToStepSize(execQty3*0.9992, leg4.StepSize)
 			unwindReq := exchange.OrderRequest{
 				Symbol:   leg4.Symbol,
 				Side:     unwindSide,
 				Type:     exchange.TypeMarket,
-				Quantity: execQty3 * 0.999,
+				Quantity: unwindQty,
 				StepSize: leg4.StepSize,
 				TickSize: leg4.TickSize,
 			}
@@ -406,6 +477,41 @@ func (e *Executor) executeLive(ctx context.Context, opp *ArbitrageOpportunity, s
 				Opportunity:  opp,
 				IsSuccess:    false,
 				ErrorMessage: fmt.Sprintf("Leg 4 failed (L1=%d, L2=%d, L3=%d): %v%s", resp1.OrderID, resp2.OrderID, resp3.OrderID, err4, unwindMsg),
+				Mode:         "LIVE",
+				ExecutedAt:   time.Now(),
+			}
+			e.appendLog(res)
+			return res
+		}
+
+		execQty4, _ := strconv.ParseFloat(resp4.ExecutedQty, 64)
+		if execQty4 <= 0 || resp4.Status == "EXPIRED" {
+			// Leg 4 expired without fill -> Unwind Asset C back to Base
+			unwindSide := exchange.SideSell
+			if leg4.Action == "BUY" {
+				unwindSide = exchange.SideBuy
+			}
+			unwindQty := adjustToStepSize(execQty3*0.9992, leg4.StepSize)
+			unwindReq := exchange.OrderRequest{
+				Symbol:   leg4.Symbol,
+				Side:     unwindSide,
+				Type:     exchange.TypeMarket,
+				Quantity: unwindQty,
+				StepSize: leg4.StepSize,
+				TickSize: leg4.TickSize,
+			}
+			unwindResp, unwindErr := e.client.CreateOrder(ctx, unwindReq)
+			unwindMsg := ""
+			if unwindErr != nil {
+				unwindMsg = fmt.Sprintf(" | ⚠️ Auto-rollback error: %v", unwindErr)
+			} else {
+				unwindMsg = fmt.Sprintf(" | 🛡️ Auto-rollback OK (sold back to Base orderId=%d)", unwindResp.OrderID)
+			}
+
+			res := ExecutionResult{
+				Opportunity:  opp,
+				IsSuccess:    false,
+				ErrorMessage: fmt.Sprintf("⚠️ DIBATALKAN OLEH BURSA (Leg 4 IOC Expired, L1=%d, L2=%d, L3=%d)%s", resp1.OrderID, resp2.OrderID, resp3.OrderID, unwindMsg),
 				Mode:         "LIVE",
 				ExecutedAt:   time.Now(),
 			}

@@ -207,9 +207,28 @@ func main() {
 						liveSpreadsMu.Unlock()
 					}
 
+					// Verify that the live base asset pool has sufficient full capital (>= TradeAmountUSDT)
+					tradeAmount := cfg.TradeAmountUSDT
+					if cfg.TradingMode == "live" && binanceClient.HasCredentials() {
+						liveBalanceMu.RLock()
+						var availableBal float64
+						if tri.BaseAsset == "USDC" {
+							availableBal = liveUSDCBalance
+						} else {
+							availableBal = liveAccountBalance // USDT
+						}
+						liveBalanceMu.RUnlock()
+
+						if availableBal < tradeAmount {
+							// Pool balance below full configured capital, skip this base currency
+							continue
+						}
+					}
+
 					// Evaluate against execution threshold
-					opp, found := evaluator.Evaluate(tri, quotes, cfg.TradeAmountUSDT, nowMs)
+					opp, found := evaluator.Evaluate(tri, quotes, tradeAmount, nowMs)
 					if found {
+
 						// Record to top opportunities list with deduplication
 						topOppMu.Lock()
 						foundIdx := -1
