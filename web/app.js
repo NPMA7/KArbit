@@ -499,7 +499,7 @@ function renderExecutionsTable(logs) {
     const isLiveMode = currentMode === 'live';
     execTbody.innerHTML = `
       <tr class="row-empty">
-        <td colspan="6">
+        <td colspan="5">
           <div class="empty-state-text" style="color: var(--text-muted); font-size: 0.82rem;">
             ${isLiveMode ? '🚀 Mode Live Binance Aktif. Belum ada order riil yang dieksekusi pada sesi ini.' : '📊 Mode Paper Simulation. Belum ada trade simulasi yang tercatat.'}
           </div>
@@ -518,6 +518,31 @@ function renderExecutionsTable(logs) {
     const isWin = (opp.net_profit_usdt || 0) > 0;
     const modeBadgeClass = log.mode === 'live' ? 'badge-pill bg-danger-soft' : 'badge-pill bg-info-soft';
 
+    let statusHtml = '';
+    if (log.is_success) {
+      statusHtml = '<span class="text-emerald font-weight-600">✔ FILLED (SUKSES)</span>';
+    } else {
+      const msg = log.error_message || 'FAILED';
+      let legMatch = msg.match(/Leg\s*([1-4])/i) || msg.match(/L([1-4])/i);
+      let legNumber = legMatch ? legMatch[1] : null;
+
+      if (msg.includes('DIBATALKAN') || msg.toLowerCase().includes('expired')) {
+        if (legNumber === '1' || (!legNumber && !msg.includes('filled'))) {
+          statusHtml = `<span class="text-warning" title="${msg}">⚠️ DIBATALKAN di <strong>Leg 1</strong> (Harga bergerak cepat / 0 Fill)</span>`;
+        } else if (legNumber) {
+          const isRollbackOk = msg.includes('Auto-rollback OK') || msg.includes('sold back');
+          const rollbackTag = isRollbackOk ? '<span class="text-emerald" style="font-size:0.75rem; margin-left:4px;">🛡️ Rollback OK</span>' : '';
+          statusHtml = `<span class="text-warning" title="${msg}">⚠️ DIBATALKAN di <strong>Leg ${legNumber}</strong> (IOC Expired)${rollbackTag}</span>`;
+        } else {
+          statusHtml = `<span class="text-warning" title="${msg}">⚠️ DIBATALKAN (Harga bergerak cepat / 0 Fill)</span>`;
+        }
+      } else if (msg.includes('slippage') || msg.includes('tolerance')) {
+        statusHtml = `<span class="text-danger" title="${msg}">✖ ${msg}</span>`;
+      } else {
+        statusHtml = `<span class="text-danger" title="${msg}">✖ ${msg}</span>`;
+      }
+    }
+
     html += `
       <tr>
         <td class="font-mono text-muted">${timeStr}</td>
@@ -528,14 +553,9 @@ function renderExecutionsTable(logs) {
         </td>
         <td class="font-mono ${isWin ? 'text-emerald' : 'text-danger'}">+${(opp.net_profit_percent || 0).toFixed(3)}%</td>
         <td class="font-mono ${isWin ? 'text-emerald' : 'text-danger'}">+$${(opp.net_profit_usdt || 0).toFixed(4)}</td>
-        <td class="font-mono text-muted">${log.execution_time_ns ? (log.execution_time_ns / 1000000).toFixed(1) : '<1'} ms</td>
         <td>
           <span class="${modeBadgeClass}">${(log.mode).toUpperCase()}</span>
-          ${log.is_success 
-            ? '<span class="text-emerald font-weight-600">✔ FILLED (SUKSES)</span>' 
-            : ((log.error_message && (log.error_message.includes('DIBATALKAN') || log.error_message.includes('expired') || log.error_message.includes('EXPIRED')))
-                ? `<span class="text-warning">⚠️ DIBATALKAN (Harga bergerak cepat / 0 Fill)</span>`
-                : `<span class="text-danger">✖ ${log.error_message || 'FAILED'}</span>`)}
+          ${statusHtml}
         </td>
       </tr>
     `;

@@ -361,17 +361,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  height: auto;
 }
 
 .content-right {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  height: auto;
 }
 
 .panel-radar {
+  height: 480px;
   min-height: 380px;
   max-height: 480px;
   display: flex;
@@ -385,15 +384,14 @@ body {
 }
 
 .panel-executions {
-  min-height: 240px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .panel-executions .table-responsive {
-  min-height: 180px;
-  max-height: 320px;
+  height: 480px;
+  max-height: 480px;
   overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: thin;
